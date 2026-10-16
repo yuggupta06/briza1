@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0d12;
+  --foreground: #f4f7fb;
+  --surface: #121722;
+  --surface-raised: #182131;
+  --line: rgba(255, 255, 255, 0.1);
+  --muted: #9aa7ba;
+  --accent: #78e6c8;
+  --accent-strong: #55cfae;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* { box-sizing: border-box; }
+html { background: var(--background); }
+body {
+  background: radial-gradient(circle at top right, #18263a 0, var(--background) 38rem);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  user-select: none;
+}
+
+::selection { background: rgba(120, 230, 200, 0.3); }
+
+.feed-surface {
+  background: rgba(18, 23, 34, 0.84);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.fade-in-out { animation: fadeInOut 1.2s ease-in-out forwards; }
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: scale(0.5); }
+  30%, 70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.2); }
+}
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+.fade-in-out {
+  animation: fadeInOut 1.2s ease-in-out forwards;
+}
+/* Hide Play/Pause button (Chrome, Edge, Safari) */
+.hide-video-buttons::-webkit-media-controls-play-button {
+  display: none !important;
+}
+
+/* Hide Mute/Unmute (volume) button */
+.hide-video-buttons::-webkit-media-controls-mute-button {
+  display: none !important;
+}
+
+/* Hide volume slider (if visible) */
+.hide-video-buttons::-webkit-media-controls-volume-slider {
+  display: none !important;
+}
+
+/* Firefox - hide play + mute */
+.hide-video-buttons::-moz-media-controls-play-button,
+.hide-video-buttons::-moz-media-controls-mute-button {
+  display: none !important;
+}
