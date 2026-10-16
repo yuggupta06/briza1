@@ -24,60 +24,47 @@ export default function PostCard({
   const { author } = Post;
 
   return (
-    <article className="feed-surface w-full md:w-[min(720px,86vw)] rounded-none md:rounded-3xl overflow-hidden"
+    <article
+      className="feed-surface w-full overflow-hidden rounded-xl border border-white/10"
       key={`${Post._id}-${index}`}
     >
-        <div className="flex items-center gap-x-3 px-5 py-4 bg-white/[0.02]">
-        <Link
-          prefetch
-          href={`/search/${author.username}`}
-        >
+      <header className="flex items-center gap-3 border-b border-white/10 bg-white/[0.02] px-4 py-3">
+        <Link prefetch href={`/search/${author.username}`} className="shrink-0">
           <Image
             priority
-            className="rounded-full md:w-[50px]"
+            className="h-10 w-10 rounded-full object-cover ring-1 ring-white/15"
             src={author.imageUrl}
-            alt="Profile"
-            width={30}
-            height={30}
+            alt={`${author.username} profile`}
+            width={40}
+            height={40}
           />
         </Link>
-
         <Link
           prefetch
           href={`/search/${author.username}`}
+          className={`${notoSerif.className} min-w-0 flex-1 truncate text-sm text-white transition-colors hover:text-[#78e6c8] md:text-base`}
         >
-          <p
-            className={`${notoSerif.className} text-white text-sm md:text-lg`}
-          >
-            {author.username}
-          </p>
+          {author.username}
         </Link>
-      </div>
+        <MoreHorizontal
+          role="img"
+          aria-label="More options"
+          className="h-5 w-5 shrink-0 text-white/55"
+        />
+      </header>
 
       <motion.div
         layoutId={`image-${index}`}
-        className="relative h-[300px] md:h-[400px] lg:h-[500px] xl:h-[450px] border-y-2 border-gray-700 cursor-pointer"
+        className="relative h-[min(78vh,620px)] min-h-[300px] w-full cursor-pointer border-b border-white/10 bg-[#1a1a1a]"
       >
-        {Post.postType == "image" ? (
+        {Post.postType === "image" ? (
           <Image
             priority
             src={Post.postUrl}
-            alt={`Image ${index}`}
+            alt={`Post by ${author.username}`}
             fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 80vw, 60vw"
-            className="object-contain rounded-lg"
-          // onDoubleClick={() =>
-          //     singleCLick({
-          //         user,
-          //         post,
-          //         index,
-          //         userWithImages,
-          //         setLikedPostNumber,
-          //         setUserWithImages,
-          //         currentUserId: currentUserId!,
-          //         showLike: isLiked,
-          //     })
-          // }
+            sizes="(max-width: 768px) 100vw, 760px"
+            className="object-contain"
           />
         ) : (
           <video
@@ -90,58 +77,39 @@ export default function PostCard({
             src={Post.postUrl}
             muted
             controls
-            className="object-contain w-full h-full rounded-lg cursor-grab"
+            className="h-full w-full cursor-grab object-contain"
           />
         )}
 
         {index === likeAnimationIndex && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <Heart className="w-16 h-16 text-red-500 fill-red-500 fade-in-out" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <Heart className="h-16 w-16 fill-red-500 text-red-500 fade-in-out" />
           </div>
         )}
       </motion.div>
 
-      <div className="flex items-center space-x-2 pl-4 py-4 md:*:w-7 md:*:h-7 lg:*:w-5 lg:*:h-5 md:py-4 *:cursor-pointer">
-        <Heart
-        // onClick={() =>
-        //     singleCLick({
-        //         user,
-        //         post,
-        //         index,
-        //         userWithImages,
-        //         setLikedPostNumber,
-        //         setUserWithImages,
-        //         currentUserId: currentUserId!,
-        //         showLike: isLiked,
-        //     })
-        // }
-        // className={`transition-colors duration-300 ${
-        //     isLiked
-        //         ? "fill-red-500 text-red-500"
-        //         : "text-white"
-        // }`}
-        />
+      <div className="flex items-center gap-4 px-4 pt-3 pb-1">
+        <div className="text-white/80" aria-hidden="true">
+          <Heart aria-hidden="true" className="h-5 w-5 transition-colors hover:text-[#78e6c8]" />
+        </div>
+        <div className="flex items-center gap-2 text-white/80" role="img" aria-label="Comments">
+          <MessageCircle aria-hidden="true" className="h-5 w-5" />
+        </div>
+        <button
+          type="button"
+          aria-label="Share post"
+          onClick={() => handleShare()}
+          className="text-white/80 transition-colors hover:text-[#78e6c8]"
+        >
+          <Share2 aria-hidden="true" className="h-5 w-5" />
+        </button>
+      </div>
 
-        <p className="text-white">
-          {Post.likes}
+      <div className="px-4 pt-2 pb-4">
+        <p className="text-sm font-semibold text-white">
+          {Post.likes.toLocaleString("en-US")} likes
         </p>
-
-        <MessageCircle
-        // onClick={() => {
-        //     getAllUsersWithComments({
-        //         user,
-        //         post,
-        //         index,
-        //         setShow,
-        //         setActiveImage,
-        //         setCommentArray,
-        //     } as any);
-        // }}
-        />
-
-        <Share2 onClick={() => handleShare()} />
       </div>
     </article>
-
   );
 }
