@@ -8,7 +8,6 @@ function createAuthError(message: string, statusCode: number) {
 
 export async function getAuthUser() {
   const token = (await cookies()).get("token")?.value;
-  console.log("token", token);
   if (!token) {
     throw createAuthError("Authentication required", 401);
   }

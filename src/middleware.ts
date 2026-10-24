@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import axios from "axios";
-import { getAuthUser } from "./backend/lib/auth/getAuthUser";
 
 export default async function middleware(request: NextRequest) {
-  const { pathname, origin } = request.nextUrl;
+  const { pathname } = request.nextUrl;
   const token = request.cookies.get("token")?.value;
   // Only apply the ownership check to search profile routes.
-  if (pathname.startsWith("/search") || pathname.startsWith("/profile") || pathname.startsWith("/upload") ) {
+  if (pathname==="/" || pathname.startsWith("/search") || pathname.startsWith("/profile") || pathname.startsWith("/upload") || pathname.startsWith("/messages")    ) {
 
     if (!token) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-    let userId: string | undefined;
+    // let userId: string | undefined;
 
     // try {
     //   const secret = process.env.JWT_SECRET;
@@ -34,7 +32,7 @@ export default async function middleware(request: NextRequest) {
     //   return NextResponse.redirect(new URL("/login", request.url));
     // }
 
-    const username = pathname.split("/")[2];
+    // const username = pathname.split("/")[2];
 
     try {
       // const response = await axios.post(

@@ -1,55 +1,98 @@
 
+import mongoose from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
+
 import { Connect } from "@/backend/lib/dbConnect";
-import "@/backend/models/user";
+import Like from "@/backend/models/like";
 import Post from "@/backend/models/post";
-import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
+import "@/backend/models/user";
+
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
+import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
+
+const PAGE_SIZE = 2;
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
-  await getAuthUser();
+  // Authenticate and get the logged-in user's ID.
+  const { userId } = await getAuthUser();
 
-  
-    const cursor = req.nextUrl.searchParams.get("cursor");
-
-    // Validate the cursor before querying MongoDB.
-    if (cursor && !/^[a-fA-F0-9]{24}$/.test(cursor)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid pagination cursor",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Connection errors are caught too.
-    await Connect();
-
-    const posts = await Post.find({
-        deleted: false,
-        ...(cursor && { _id: { $lt: cursor } }),
-      })
-        .sort({ _id: -1 })
-        .limit(3)
-        .select(
-          " author postUrl postType likes  "
-        )
-        .populate("author", "username imageUrl")
-        .lean();
-
-    const hasMore = posts.length > 2;
-    const page = posts.slice(0, 2);
-
+  if (!mongoose.isValidObjectId(userId)) {
     return NextResponse.json(
       {
-        success: true,
-        posts: page,
-        nextCursor: hasMore
-          ? String(page[page.length - 1]._id)
-          : null,
-        hasMore,
+        success: false,
+        error: "Invalid authenticated user",
       },
-      { status: 200 }
+      { status: 401 }
     );
+  }
+
+  const cursor = req.nextUrl.searchParams.get("cursor");
+
+  // Validate the cursor before querying MongoDB.
+  if (cursor && !/^[a-fA-F0-9]{24}$/.test(cursor)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Invalid pagination cursor",
+      },
+      { status: 400 }
+    );
+  }
+
+  await Connect();
+
+  // Fetch one extra post to determine whether another page exists.
+  const fetchedPosts = await Post.find({
+    deleted: false,
+    ...(cursor && {
+      _id: {
+        $lt: new mongoose.Types.ObjectId(cursor),
+      },
+    }),
+  })
+    .sort({ _id: -1 })
+    .limit(PAGE_SIZE + 1)
+    .select(
+      "_id author postUrl postType likesCount commentsCount caption createdAt"
+    )
+    .populate("author", "username imageUrl")
+    .lean();
+
+  const hasMore = fetchedPosts.length > PAGE_SIZE;
+  const page = fetchedPosts.slice(0, PAGE_SIZE);
+
+  // Find which posts the current user has liked.
+  const postIds = page.map((post) => post._id);
+  const currentUserObjectId = new mongoose.Types.ObjectId(userId);
+
+  const userLikes = postIds.length
+    ? await Like.find({
+      post: { $in: postIds },
+      author: currentUserObjectId,
+    })
+      .select("post")
+      .lean()
+    : [];
+
+  const likedPostIds = new Set(
+    userLikes.map((like) => like.post.toString())
+  );
+
+  // Add a user-specific isLiked property to every post.
+  const posts = page.map((post) => ({
+    ...post,
+    isLiked: likedPostIds.has(String(post._id)),
+  }));
+
+  return NextResponse.json(
+    {
+      success: true,
+      posts,
+      nextCursor: hasMore
+        ? String(page[page.length - 1]._id)
+        : null,
+      hasMore,
+    },
+    { status: 200 }
+  );
 });

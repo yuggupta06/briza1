@@ -1,114 +1,134 @@
-"use client"
-import { useState, useRef } from "react"
-import axios from "axios"
+"use client";
+
+import { notoSerif } from "@/app/fonts";
+import axios from "axios";
 import Image from "next/image";
-import {notoSerif} from "@/app/fonts";
 import Link from "next/link";
+import { useRef, useState } from "react";
 
-// import Loading from "../frontend/components/Loading/loading";
-// import UserType from "@/types";
+type SearchUser = {
+  _id?: string;
+  username: string;
+  imageUrl?: string;
+};
+
 export default function SearchBar() {
-    const [searchValue, setSearchValue] = useState("");
-    // const [searchUsers, setSearchUsers] = useState<UserType []>([]);
-    const [searchSectionLoading, setSearchSectionLoading] = useState(false)
-    const controllerRef = useRef<AbortController | null>(null)
+  const [searchValue, setSearchValue] = useState("");
+  const [searchUsers, setSearchUsers] = useState<SearchUser[]>([]);
+  const [searchSectionLoading, setSearchSectionLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
-    const searchClick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
-        setSearchSectionLoading(true);
-        setSearchValue(value);
-        if (controllerRef.current) {
-            controllerRef.current.abort();
-        }
-        controllerRef.current = new AbortController();
-        try {
-            if (value == "") {
-                setSearchSectionLoading(false);
-                setSearchUsers([]);
-                return;
-            }
-            const resBody = await axios.post(
-                "/api/search/search-users",
-                { searchValue: e.target.value },
-                { signal: controllerRef.current.signal }
+  const controllerRef = useRef<AbortController | null>(null);
 
-            )
-            setSearchUsers(resBody.data.users);
-            setSearchSectionLoading(false);
-        }
-        catch (error) {
-            if (!axios.isCancel(error))  {
-                console.error("Error in searching:", error);
-            }
-        }
-    }
-    if(!isLoaded){
-        return(
-            <Loading />
-        )
+  const searchClick = async (value: string) => {
+    setSearchValue(value);
+    setSearchError("");
+
+    // Cancel the previous search request.
+    controllerRef.current?.abort();
+
+    if (!value.trim()) {
+      setSearchUsers([]);
+      setSearchSectionLoading(false);
+      return;
     }
 
+    const controller = new AbortController();
+    controllerRef.current = controller;
 
+    setSearchSectionLoading(true);
 
-    return (
-        <>
-            <div className="flex justify-between items-center md:hidden w-full p-5">
-                <h1 className={`${notoSerif.className} text-white text-lg`}>MYGRAM</h1>
-            </div>
-            {isSignedIn ? (
+    try {
+      const resBody = await axios.post(
+        "/api/search",
+        { searchValue: value.trim() },
+        { signal: controller.signal }
+      );
 
-                <div className="flex flex-col items-start md:items-center pt-5 px-5 h-screen w-full md:pt-20 ">
-                    <SignOutButton />
-                    <input
-                        className="border-2 border-amber-50 rounded-xl w-full md:w-1/2 px-2 py-1"
-                        type="text"
-                        placeholder="Search"
-                        value={searchValue}
-                        onChange={(e) => searchClick(e)}
+      // Ignore stale responses.
+      if (controller.signal.aborted) return;
+
+      setSearchUsers(resBody.data.users || []);
+    } catch (error) {
+      if (axios.isCancel(error) || controller.signal.aborted) return;
+
+      console.error("Error in searching:", error);
+      setSearchUsers([]);
+      setSearchError("Unable to search right now. Please try again.");
+    } finally {
+      if (!controller.signal.aborted) {
+        setSearchSectionLoading(false);
+      }
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-full flex-col items-start px-5 pt-5 md:items-center md:pt-20">
+      <input
+        className="w-full rounded-xl border-2 border-amber-50 px-3 py-2 text-white outline-none md:w-1/2"
+        type="text"
+        placeholder="Search users..."
+        value={searchValue}
+        onChange={(e) => void searchClick(e.target.value)}
+      />
+
+      {searchSectionLoading ? (
+        <div className="flex h-[70vh] w-full items-center justify-center">
+          <div
+            role="status"
+            aria-label="Searching users"
+            className="h-12 w-12 animate-spin rounded-full border-4 border-gray-500 border-t-white"
+          />
+        </div>
+      ) : searchError ? (
+        <div className="flex h-[70vh] w-full items-center justify-center">
+          <p className="text-center text-red-400">{searchError}</p>
+        </div>
+      ) : searchValue.trim() && searchUsers.length === 0 ? (
+        <div className="flex h-[70vh] w-full items-center justify-center">
+          <p className="text-center text-gray-400">
+            No users found for {searchValue.trim()}.
+          </p>
+        </div>
+      ) : (
+        searchUsers.length > 0 && (
+          <div className="w-full p-5 md:w-1/2">
+            {searchUsers.map((user) => (
+              <div
+                key={user._id || user.username}
+                className="w-full py-2"
+              >
+                <Link
+                  prefetch={false}
+                  className="flex items-center gap-x-4 rounded-lg p-2 transition hover:bg-white/5"
+                  href={`/search/${encodeURIComponent(user.username)}`}
+                >
+                  {user.imageUrl ? (
+                    <Image
+                      className="rounded-full object-cover"
+                      src={user.imageUrl}
+                      alt={`${user.username}'s profile`}
+                      width={45}
+                      height={45}
                     />
-                    {searchSectionLoading ? (
-                        <div className="flex items-center justify-center w-full h-[70vh]">
-                            <div className="w-12 h-12 border-4 border-gray-300 border-t-white rounded-full animate-spin"></div>
-                        </div>
+                  ) : (
+                    <div
+                      className="h-[45px] w-[45px] shrink-0 rounded-full bg-gray-700"
+                      aria-hidden="true"
+                    />
+                  )}
 
-
-                    ) : (
-                        <>
-                            {
-                                searchValue != "" && !searchSectionLoading && (searchUsers.length === 0) ? (
-                                    <div className="flex h-[90vh] md:h-full justify-center items-center">
-                                        <h1 className="text-center text-white"> “This profile isn’t available. The user may have been removed or never existed.”</h1>
-                                    </div>
-                                ) : (
-                                    <div className="w-1/2 p-5">
-                                        {
-                                            searchUsers
-                                                .map((user: UserType, index) => {
-                                                    return (
-                                                        <div key={index} className="py-2 md:w-1/2 ">
-                                                            <Link prefetch={true} className=" flex gap-x-4" href={`/search/${user.username}`}>
-                                                                <Image  priority className="rounded-full " src={user?.imageUrl} alt={`User${index}`} width={45} height={45} />
-                                                                <p className={`${notoSerif.className} text-white text-sm mt-2 md:text-lg `} >{user.username}</p>
-                                                            </Link>
-                                                        </div>
-                                                    )
-                                                })
-                                        }
-                                    </div>
-                                )
-                            }
-                        </>
-                    )
-                    }
-
-                </div>
-            ) :
-                <div className="flex h-[80vh] md:h-full md:w-full items-center justify-center relative">
-                    <h1 className="text-center text-white text-lg md:text-2xl font-bold px-3">Please Sign in first in the profile Page..</h1>
-                </div>
-
-            }
-        </>
-
-    )
+                  <p
+                    className={`${notoSerif.className} mt-1 text-sm text-white md:text-lg`}
+                  >
+                    {user.username}
+                  </p>
+                </Link>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
 }

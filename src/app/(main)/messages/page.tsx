@@ -38,7 +38,7 @@ export default function MessagesPage() {
       controllerRef.current = new AbortController();
       try {
         const resBody = await axios.post("/api/socket", {
-          clerkId: user?.id,
+          userId: user?._id ?? user?.id,
           socketId: socketId
         },
           { signal: controllerRef.current.signal }
@@ -54,11 +54,11 @@ export default function MessagesPage() {
 
     if (user) {
       socket.on("Notification changed socket-id", (message) => {
-        const { socketId, clerkId } = message
-        console.log(clerkId)
+        const { socketId, userId } = message
+        console.log(userId)
         console.log(socketId)
         setAllUsers((prev) =>
-          prev.map((p) => p.clerkId == clerkId ? { ...p, socketId: socketId } : p)
+          prev.map((p) => (p._id ?? p.id) == userId ? { ...p, socketId: socketId } : p)
         )
         console.log(allUsers)
         setSelectedUser(prev => {
@@ -72,7 +72,7 @@ export default function MessagesPage() {
       socket.on("connect", () => {
         console.log("Connected with socket:", socket.id);
         InsertandDeleteSocket(socket.id);
-        socket.emit("changed-socket-id", { socketId: socket.id, clerkId: user.id });
+        socket.emit("changed-socket-id", { socketId: socket.id, userId: user?._id ?? user?.id });
       });
       socket.on("received-message", (message: ChatMessage) => {
         setMessages((prev) => [...prev, message])

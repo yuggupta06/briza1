@@ -4,6 +4,6 @@ export type UserType = {
   username: string;
   imageUrl: string;
   email: string;
-  followers?: number;
-  following?: number;
+  followers: number;
+  following: number;
 };

@@ -9,12 +9,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     
     await Connect();
         const reqBody=await request.json();
-        const {secure_url,resource_type}=reqBody;
+        const {secure_url,resource_type,caption}=reqBody;
 
         const post =await Post.create({
             author:author.userId,
             postUrl:secure_url,
             postType:resource_type,
+            caption: caption || "",
         });
 
         await post.save();

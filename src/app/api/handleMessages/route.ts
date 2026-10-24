@@ -16,7 +16,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         const  reqBody=await req.json();
         const {username1,username2}=reqBody
         const combinedName=[username1,username2].sort().join('&')
-        let messages=await redis.lrange(combinedName,-100,-1);
+        const messages=await redis.lrange(combinedName,-100,-1);
         return NextResponse.json({messages})
     
 }

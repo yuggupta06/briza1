@@ -4,7 +4,8 @@ import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 
 export const POST = withErrorHandler(
-  async (request: NextRequest) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async (_request: NextRequest) => {
     await getAuthUser(); // Ensure the user is authenticated before logging out
     const response = NextResponse.json(
       {

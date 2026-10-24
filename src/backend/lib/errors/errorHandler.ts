@@ -8,7 +8,7 @@ function isAppError(error: unknown): error is Error & { statusCode: number } {
   );
 }
 
-export function errorHandler(error: unknown) {
+export function  errorHandler(error: unknown) {
   if (isAppError(error)) {
     return NextResponse.json(
       {

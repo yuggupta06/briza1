@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 let isConnected:boolean=false;
-export  async function Connect(){
+export   async function Connect(){
     if(isConnected) return;
     try{
         await mongoose.connect(process.env.MONGO_URI! as string);

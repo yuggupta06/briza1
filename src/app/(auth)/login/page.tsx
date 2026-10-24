@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
 import axios from "axios";
-
+import { ArrowRight, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
 type AuthMode = "login" | "register";
 
 export default function AuthForm() {
@@ -16,7 +15,7 @@ export default function AuthForm() {
 
   const isRegister = mode === "register";
 
-  
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
@@ -27,7 +26,7 @@ export default function AuthForm() {
           : "/api/auth/login";
 
       const payload = {
-        ...(isRegister && { username ,name }),
+        ...(isRegister && { username, name }),
         email,
         password,
       };
@@ -50,10 +49,16 @@ export default function AuthForm() {
       window.location.href = "/";
 
     } catch (error) {
-      console.error("Authentication error:", error);
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.message ||
+          "Authentication failed. Please try again.";
 
-      if (error instanceof Error) {
+        alert(message);
+      } else if (error instanceof Error) {
         alert(error.message);
+      } else {
+        alert("An unexpected error occurred.");
       }
     }
   }
@@ -180,11 +185,10 @@ export default function AuthForm() {
                 type="button"
                 onClick={() => changeMode("login")}
                 aria-pressed={!isRegister}
-                className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-200 ${
-                  !isRegister
-                    ? "bg-[#252F26] text-white shadow-sm"
-                    : "text-[#8F9B90] hover:text-white"
-                }`}
+                className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-200 ${!isRegister
+                  ? "bg-[#252F26] text-white shadow-sm"
+                  : "text-[#8F9B90] hover:text-white"
+                  }`}
               >
                 Login
               </button>
@@ -193,11 +197,10 @@ export default function AuthForm() {
                 type="button"
                 onClick={() => changeMode("register")}
                 aria-pressed={isRegister}
-                className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-200 ${
-                  isRegister
-                    ? "bg-[#252F26] text-white shadow-sm"
-                    : "text-[#8F9B90] hover:text-white"
-                }`}
+                className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-200 ${isRegister
+                  ? "bg-[#252F26] text-white shadow-sm"
+                  : "text-[#8F9B90] hover:text-white"
+                  }`}
               >
                 Sign up
               </button>
@@ -209,60 +212,60 @@ export default function AuthForm() {
               className="mt-7 space-y-5"
             >
               {/* Username - registration only */}
-              
-            {isRegister && (
-              <>
-                {/* Name Field */}
-                <div>
-                  <label htmlFor="name" className={labelClass}>
-                    Full Name
-                  </label>
 
-                  <input
-                    id="name"
-                    name="name"
-                    type="text"
-                    autoComplete="name"
-                    placeholder="Enter your full name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    minLength={3}
-                    maxLength={30}
-                    pattern="[A-Za-z0-9_]+"
-                    title="Use letters, numbers, and underscores only."
-                    required
-                    className={inputClass}
-                  />
-                </div>
+              {isRegister && (
+                <>
+                  {/* Name Field */}
+                  <div>
+                    <label htmlFor="name" className={labelClass}>
+                      Full Name
+                    </label>
 
-                {/* Username Field */}
-                <div>
-                  <label htmlFor="username" className={labelClass}>
-                    Username
-                  </label>
+                    <input
+                      id="name"
+                      name="name"
+                      type="text"
+                      autoComplete="name"
+                      placeholder="Enter your full name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      minLength={3}
+                      maxLength={30}
+                      pattern="[A-Za-z0-9_]+"
+                      title="Use letters, numbers, and underscores only."
+                      required
+                      className={inputClass}
+                    />
+                  </div>
 
-                  <input
-                    id="username"
-                    name="username"
-                    type="text"
-                    autoComplete="username"
-                    placeholder="Choose a username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    minLength={3}
-                    maxLength={30}
-                    pattern="[A-Za-z0-9_]+"
-                    title="Use letters, numbers, and underscores only."
-                    required
-                    className={inputClass}
-                  />
+                  {/* Username Field */}
+                  <div>
+                    <label htmlFor="username" className={labelClass}>
+                      Username
+                    </label>
 
-                  <p className="mt-2 text-xs text-[#778579]">
-                    3–30 characters, using letters, numbers, or underscores.
-                  </p>
-                </div>
-              </>
-            )}
+                    <input
+                      id="username"
+                      name="username"
+                      type="text"
+                      autoComplete="username"
+                      placeholder="Choose a username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      minLength={3}
+                      maxLength={30}
+                      pattern="[A-Za-z0-9_]+"
+                      title="Use letters, numbers, and underscores only."
+                      required
+                      className={inputClass}
+                    />
+
+                    <p className="mt-2 text-xs text-[#778579]">
+                      3–30 characters, using letters, numbers, or underscores.
+                    </p>
+                  </div>
+                </>
+              )}
 
 
               {/* Email */}
@@ -333,7 +336,7 @@ export default function AuthForm() {
               {/* Submit button */}
               <button
                 type="submit"
-                
+
                 className="group flex w-full items-center justify-center gap-2 rounded-xl bg-[#B8F28B] px-4 py-3.5 text-sm font-semibold text-[#142011] transition-all duration-200 hover:bg-[#C9F7A5] hover:shadow-[0_0_25px_rgba(184,242,139,0.12)] active:scale-[0.99] focus:outline-none focus:ring-4 focus:ring-[#B8F28B]/20"
               >
                 {isRegister ? "Create account" : "Sign in"}

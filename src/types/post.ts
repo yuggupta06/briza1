@@ -6,6 +6,19 @@ export type PostType = {
     imageUrl: string;
   };
   postUrl: string;
-  postType: string;
-  likes: number;
+  postType: "image" | "video" | "text";
+  isLiked: boolean;
+  caption?: string;
+  createdAt?: string;
+  likesCount: number;
+  commentsCount: number;
 };
+
+export type PostCardVariant = "feed" | "profile";
+
+export interface PostCardProps {
+  post: PostType;
+  variant?: PostCardVariant;
+  onOpenPost?: (post: PostType) => void;
+  currentUserId:string
+}
