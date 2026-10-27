@@ -10,7 +10,6 @@ function PostCardComponent({
   post,
   variant = "feed",
   onOpenPost,
-  currentUserId
 }: PostCardProps) {
   if (variant === "profile") {
     return (
@@ -21,7 +20,7 @@ function PostCardComponent({
     );
   }
 
-  return <FeedPostCard post={post} currentUserId={currentUserId} />;
+  return <FeedPostCard post={post} />;
 }
 
 const PostCard = memo(PostCardComponent);

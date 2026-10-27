@@ -56,13 +56,6 @@ export interface NavItem {
   accentIcon?: boolean
 }
 
-export const currentUser: User = {
-  name: 'Julian Vance',
-  handle: 'julianv',
-  avatar:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuBaUczvhXoVN6WKztBIwFE8iCEUNZn5MWiWwPHFLeXbo6xlkBvWq7K-UWrwBRUDHAG1Uml98SvHiTl178lQU4ilDBhGQj0by70AmxFVZftZtDMLuRF_AnKk48PsqTK431CZcX37BGAGMSQ-RP7aJafVm--ku8Wrs0RaHt0ZfYPd8wWuAQJMhVhMakxTScX4qY8-1swchMcZHz0Sj8_32uIsfMDL8d53CxOzGVWLWLQ',
-  avatarAlt: 'Portrait of Julian Vance',
-}
 
 export const currentUserStoryAvatar =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuApv7RQH_cSKl3dGBEg5XgsVnRNC9GAljpJxN3o2m6V1Ib0Jcf6qJSnH6Z_XWTLqdGcH4x1umBBjY-34QmLvHptlunSYl2gEShmsMU9vrrlodSCuZwSYUTb4NfhWBkrqKjrqe4QjHfS-QsbrxNy8QfMHTTIKQOEmA2Ica7u_8qBx9Z_nGIX7PlKsiPv_wifdCNnHpsxpVsRR8EbvLwzxOfoXx3CUEDjMqRDaT773j0'

@@ -5,7 +5,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import Image from "next/image";
@@ -19,25 +18,26 @@ import {
 } from "lucide-react";
 
 import { usePostInteractions } from "@/app/hooks/use-post-interactions";
+import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
+import { useSharePost } from "@/app/hooks/use-share-post";
+import { usePauseVideoWhenOutOfView } from "@/app/hooks/usePauseVideoWhenOutOfView";
+
 import type { PostType } from "@/types/post";
+import CommentsModalComponent from "./CommentsModal";
+
 import {
   FALLBACK_AVATAR,
   formatCount,
   formatDate,
 } from "@/backend/lib/post-card-utils";
-import CommentsModalComponent from "./CommentsModal";
 
 
-function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:string }) {
+
+function FeedPostCard({ post }: { post: PostType }) {
   const [saved, setSaved] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [showHeartAnimation, setShowHeartAnimation] = useState(false);
 
-  const heartTimerRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
-
-
-  
+  // custom hooks 
   const {
     liked,
     likeCount,
@@ -58,54 +58,44 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
     loadMoreComments,
     submitComment,
     handleLike,
-    handleCommentDeleted
+    handleCommentDeleted,
   } = usePostInteractions({ post });
 
-  // Show the heart on every double-click.
-  // Only send a like if the post is currently unliked.
-  const handleImageDoubleClick = useCallback(() => {
-    setShowHeartAnimation(true);
+  const {
+    showHeartAnimation,
+    handleDoubleClick: handleImageDoubleClick,
+  } = useMediaDoubleClick({
+    liked,
+    isLiking,
+    handleLike,
+  });
+  const sharePost = useSharePost({
+  postId: post._id,
+  username: post.author.username,
+  });
 
-    if (heartTimerRef.current) {
-      clearTimeout(heartTimerRef.current);
+  const videoRef = usePauseVideoWhenOutOfView(post.postUrl); 
+
+    // Open and close
+  const openComments = useCallback(() => {
+    if (commentsOpen) return;
+
+    setCommentsOpen(true);
+
+    if (comments.length === 0) {
+      void fetchComments(null);
     }
-
-    heartTimerRef.current = setTimeout(() => {
-      setShowHeartAnimation(false);
-      heartTimerRef.current = null;
-    }, 700);
-
-    if (!liked && !isLiking) {
-      void handleLike();
-    }
-  }, [liked, isLiking, handleLike]);
-
-  useEffect(() => {
-    return () => {
-      if (heartTimerRef.current) {
-        clearTimeout(heartTimerRef.current);
-      }
-    };
-  }, []);
-
+  }, [commentsOpen, comments.length, fetchComments]);
   const closeComments = useCallback(() => {
     setCommentsOpen(false);
     setSubmitError("");
   }, [setSubmitError]);
 
-  const openComments = useCallback(() => {
-    if (commentsOpen) return;
+  
 
-    setCommentsOpen(true);
-    if(comments.length>0) return ;
-    void fetchComments(null);
-  }, [comments.length, commentsOpen, fetchComments]);
-
-  // Lock background scrolling while the modal is open.
-  // Escape closes the modal.
+  // Lock background scrolling while comments are open.
   useEffect(() => {
     if (!commentsOpen) return;
-
     document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -122,32 +112,11 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
     };
   }, [commentsOpen, closeComments]);
 
-  const sharePost = useCallback(async () => {
-    const url = `${window.location.origin}/post/${post._id}`;
 
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `Post by @${post.author.username}`,
-          url,
-        });
-      } else {
-        await navigator.clipboard.writeText(url);
-      }
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.name !== "AbortError"
-      ) {
-        console.error("Error sharing post:", error);
-      }
-    }
-  }, [post._id, post.author.username]);
 
   return (
     <>
       <article className="w-full min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white">
-        {/* Author */}
         <div className="flex items-center justify-between px-4 py-3">
           <Link
             href={`/profile/${post.author.username}`}
@@ -186,7 +155,6 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
           </button>
         </div>
 
-        {/* Image post */}
         {post.postType === "image" && post.postUrl && (
           <div
             className="relative aspect-square w-full select-none bg-neutral-900 md:aspect-[5/4] lg:aspect-[4/3]"
@@ -213,16 +181,17 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
           </div>
         )}
 
-        {/* Video post */}
         {post.postType === "video" && post.postUrl && (
           <div
             className="relative w-full bg-black"
             onDoubleClick={handleImageDoubleClick}
           >
             <video
+            ref={videoRef}
               src={post.postUrl}
               controls
               playsInline
+              muted
               className="max-h-[650px] w-full object-contain md:max-h-[420px] lg:max-h-[480px]"
             >
               Your browser does not support video playback.
@@ -240,14 +209,12 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
           </div>
         )}
 
-        {/* Text post */}
         {post.postType === "text" && post.caption && (
           <div className="whitespace-pre-wrap break-words px-5 py-8 text-base leading-7">
             {post.caption}
           </div>
         )}
 
-        {/* Like, comment, share, save actions */}
         <div className="flex items-center justify-between px-4 pt-3">
           <div className="flex items-center gap-5">
             <button
@@ -256,10 +223,11 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
               disabled={isLiking}
               aria-label={liked ? "Unlike post" : "Like post"}
               aria-pressed={liked}
-              className={`flex cursor-pointer items-center gap-2 transition ${liked
+              className={`flex cursor-pointer items-center gap-2 transition ${
+                liked
                   ? "text-rose-500"
                   : "text-neutral-300 hover:text-rose-500"
-                } disabled:cursor-wait disabled:opacity-70`}
+              } disabled:cursor-wait disabled:opacity-70`}
             >
               <Heart
                 size={23}
@@ -308,14 +276,12 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
           </button>
         </div>
 
-        {/* Like error */}
         {likeError && (
           <p role="alert" className="px-4 pt-2 text-xs text-rose-400">
             {likeError}
           </p>
         )}
 
-        {/* Caption */}
         {post.caption?.trim() && (
           <div className="px-4 pb-4 pt-3 text-sm leading-6">
             <Link
@@ -332,7 +298,6 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
         )}
       </article>
 
-      {/* Comments are rendered in a separate component */}
       <CommentsModalComponent
         postId={post._id}
         open={commentsOpen}
@@ -351,7 +316,6 @@ function FeedPostCard({ post,currentUserId }: { post: PostType,currentUserId:str
         fetchComments={fetchComments}
         loadMoreComments={loadMoreComments}
         submitComment={submitComment}
-        currentUserId={currentUserId}
         onCommentDeleted={handleCommentDeleted}
       />
     </>

@@ -10,7 +10,7 @@ import "@/backend/models/user";
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 
-const PAGE_SIZE = 2;
+const PAGE_SIZE = 5;
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
   // Authenticate and get the logged-in user's ID.

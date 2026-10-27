@@ -21,6 +21,7 @@ import {
 import axios from "axios";
 
 import type { CommentWithAuthor } from "@/types/comment";
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import {
   FALLBACK_AVATAR,
   formatCount,
@@ -44,7 +45,6 @@ type ReplyItem = CommentItem & {
 
 interface Props {
   postId: string;
-  currentUserId: string;
   open: boolean;
   onClose: () => void;
   commentCount: number;
@@ -61,12 +61,11 @@ interface Props {
   fetchComments: (cursor: string | null) => unknown;
   loadMoreComments: () => unknown;
   submitComment: () => Promise<boolean>;
-  onCommentDeleted:(commentId:string ,isReply: boolean) => void;
+  onCommentDeleted: (commentId: string, isReply: boolean) => void;
 }
 
 function CommentsModalComponent({
   postId,
-  currentUserId,
   open,
   onClose,
   commentCount,
@@ -85,7 +84,6 @@ function CommentsModalComponent({
   submitComment,
   onCommentDeleted
 }: Props) {
-  console.log(currentUserId)
   const commentsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -166,7 +164,9 @@ function CommentsModalComponent({
           ref={commentsContainerRef}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
         >
-          {commentsLoading && comments.length === 0 ? (
+          {commentsLoading &&
+            comments.length === 0 &&
+            !isSubmittingComment ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
               <LoaderCircle size={18} className="animate-spin" />
               Loading comments...
@@ -205,7 +205,6 @@ function CommentsModalComponent({
                   key={item._id}
                   postId={postId}
                   item={item}
-                  currentUserId={currentUserId}
                   onCommentDeleted={onCommentDeleted}
                 />
               ))}
@@ -307,17 +306,15 @@ function CommentsModalComponent({
 interface ThreadProps {
   postId: string;
   item: CommentItem;
-  currentUserId: string;
-  onCommentDeleted:(commentId:string ,isReply: boolean) => void;
+  onCommentDeleted: (commentId: string, isReply: boolean) => void;
 }
 
 function CommentThreadComponent({
   postId,
   item,
-  currentUserId,
   onCommentDeleted
 }: ThreadProps) {
-  
+  const { currentUser } = useCurrentUser();
   const [replies, setReplies] = useState<ReplyItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -394,8 +391,8 @@ function CommentThreadComponent({
         setReplyError(
           axios.isAxiosError(error)
             ? error.response?.data?.message ||
-                error.message ||
-                "Unable to load replies."
+            error.message ||
+            "Unable to load replies."
             : error instanceof Error
               ? error.message
               : "Unable to load replies."
@@ -447,14 +444,14 @@ function CommentThreadComponent({
           }
         } else {
           // Refresh the parent-owned comments list.
-          onCommentDeleted(commentId,false)
+          onCommentDeleted(commentId, false)
         }
       } catch (error) {
         setDeleteError(
           axios.isAxiosError(error)
             ? error.response?.data?.message ||
-                error.message ||
-                "Unable to delete comment."
+            error.message ||
+            "Unable to delete comment."
             : error instanceof Error
               ? error.message
               : "Unable to delete comment."
@@ -543,8 +540,8 @@ function CommentThreadComponent({
         setReplyError(
           axios.isAxiosError(error)
             ? error.response?.data?.message ||
-                error.message ||
-                "Unable to post your reply."
+            error.message ||
+            "Unable to post your reply."
             : error instanceof Error
               ? error.message
               : "Unable to post your reply."
@@ -557,8 +554,7 @@ function CommentThreadComponent({
   );
 
   const canDeleteComment =
-    String(item.author._id) === String(currentUserId);
-  // console.log(currentUserId)
+    String(item.author._id) === String(currentUser?._id);
 
   return (
     <div className="min-w-0 px-3 py-4 sm:px-4">
@@ -577,7 +573,7 @@ function CommentThreadComponent({
             <button
               type="button"
               onClick={() => handleReply(item)}
-              className="text-xs font-semibold text-neutral-400 hover:text-white"
+              className="text-xs font-semibold text-neutral-400 hover:text-white cursor-pointer"
             >
               Reply
             </button>
@@ -586,7 +582,7 @@ function CommentThreadComponent({
               type="button"
               onClick={handleViewReplies}
               aria-expanded={expanded}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-400 hover:text-sky-300"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-400 hover:text-sky-300 cursor-pointer"
             >
               <ChevronDown
                 size={14}
@@ -646,7 +642,7 @@ function CommentThreadComponent({
             <>
               {replies.map((reply) => {
                 const canDeleteReply =
-                  String(reply.author._id) === String(currentUserId);
+                  String(reply.author._id) === String(currentUser?._id);
 
                 return (
                   <div key={reply._id} className="min-w-0 py-3">
@@ -824,9 +820,8 @@ function Avatar({
   return (
     <Link
       href={`/profile/${author.username}`}
-      className={`relative shrink-0 overflow-hidden rounded-full bg-neutral-800 ${
-        small ? "h-8 w-8" : "h-[38px] w-[38px]"
-      }`}
+      className={`relative shrink-0 overflow-hidden rounded-full bg-neutral-800 ${small ? "h-8 w-8" : "h-[38px] w-[38px]"
+        }`}
     >
       <Image
         src={author.imageUrl || FALLBACK_AVATAR}

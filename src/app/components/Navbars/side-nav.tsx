@@ -1,15 +1,20 @@
 
 "use client";
 
-import { currentUser, sidebarNav } from "@/backend/lib/data";
+import { sidebarNav } from "@/backend/lib/data";
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import { cn } from "@/backend/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "../ui/avatar";
 import { Icon } from "../ui/briza-icon";
 
+
+
 export function SideNav() {
   const pathname = usePathname();
+  const isProfileActive = pathname === "/profile";
+  const { currentUser, isLoading } = useCurrentUser();
 
   const isActive = (href: string) => {
     if (!href || href === "#") return false;
@@ -56,7 +61,7 @@ export function SideNav() {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex items-center justify-between overflow-hidden rounded-lg px-4 py-3 transition-all duration-200 hover:bg-surface-container hover:text-on-surface active:scale-[0.98]",
-                  active
+                  active && pathname === "/profile"
                     ? "bg-surface-container-high font-semibold text-primary shadow-sm"
                     : "font-medium text-on-surface-variant"
                 )}
@@ -116,6 +121,7 @@ export function SideNav() {
 
       {/* Bottom section */}
       <div className="flex flex-col gap-2 border-t border-outline-variant/30 pt-4">
+        {/* Settings */}
         <Link
           href="/settings"
           aria-current={isActive("/settings") ? "page" : undefined}
@@ -153,27 +159,32 @@ export function SideNav() {
               : "text-on-surface-variant hover:bg-surface-container"
           )}
         >
-          <span className="flex items-center gap-2.5">
+          <span className="flex min-w-0 items-center gap-2.5">
             <Avatar
-              src={currentUser.avatar}
-              alt={currentUser.avatarAlt}
+              src={currentUser?.imageUrl ?? ""}
+              alt={currentUser?.username ?? "Your profile"}
               size={32}
-              className="ring-1 ring-outline-variant/40"
+              className="shrink-0 ring-1 ring-outline-variant/40"
             />
 
-            <span className="flex flex-col">
-              <span className="text-label-md text-on-surface">
-                {currentUser.name}
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-label-md text-on-surface">
+                {isLoading
+                  ? "Loading..."
+                  : currentUser?.name ?? "Your profile"}
               </span>
-              <span className="text-label-sm text-outline">
-                @{currentUser.handle}
+
+              <span className="truncate text-label-sm text-outline">
+                {currentUser?.username
+                  ? `@${currentUser.username}`
+                  : ""}
               </span>
             </span>
           </span>
 
           <Icon
             name="more_horiz"
-            className="text-[18px] text-outline"
+            className="shrink-0 text-[18px] text-outline"
           />
 
           <span className="sr-only">Account options</span>

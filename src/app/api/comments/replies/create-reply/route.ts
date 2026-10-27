@@ -55,7 +55,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     const postObjectId = new Types.ObjectId(postId);
     const rootCommentId = new Types.ObjectId(parentCommentId);
     const targetCommentId = new Types.ObjectId(replyToCommentId);
-    console.log(1)
+
     const postExists = await Post.exists({ _id: postObjectId });
 
     if (!postExists) {
@@ -64,7 +64,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
             { status: 404 }
         );
     }
-    console.log(2)
+    
     const rootComment = await Comment.findOne({
         _id: rootCommentId,
         post: postObjectId,
@@ -79,7 +79,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
             { status: 404 }
         );
     }
-    console.log(3)
+  
     // Target must be the root comment or one of its replies.
     const targetComment = (await Comment.findOne({
         _id: targetCommentId,

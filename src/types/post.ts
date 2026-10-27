@@ -20,5 +20,4 @@ export interface PostCardProps {
   post: PostType;
   variant?: PostCardVariant;
   onOpenPost?: (post: PostType) => void;
-  currentUserId:string
 }

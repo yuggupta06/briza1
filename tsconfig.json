@@ -37,7 +37,7 @@
     "src/app/components/Video-Player/videoPlayer.jsx",
     "src/backend/lib/dbConnect.ts",
     ".next/dev/types/**/*.ts"
-, "src/backend/models/comment.js"  ],
+, "src/backend/models/comment.ts"  ],
   "exclude": [
     "node_modules"
   ]

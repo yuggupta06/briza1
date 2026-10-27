@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const likeSchema = new mongoose.Schema(
@@ -21,7 +20,7 @@ const likeSchema = new mongoose.Schema(
 likeSchema.index({ post: 1, author: 1 }, { unique: true });
 
 // Find all likes made by a particular user.
-likeSchema.index({ author: 1 });
+likeSchema.index({ author: 1 ,_id:-1});
 
 const Like =
   mongoose.models.Like || mongoose.model("Like", likeSchema);

@@ -27,7 +27,7 @@ function ProfilePostThumbnailComponent({
       type="button"
       onClick={handleOpen}
       aria-label={`Open post by @${post.author.username}`}
-      className="group relative block aspect-square w-full min-w-0 overflow-hidden bg-neutral-900 text-left"
+      className="group relative block aspect-square w-full min-w-0 overflow-hidden bg-neutral-900 text-left cursor-pointer"
     >
       {post.postType === "image" && post.postUrl ? (
         <Image

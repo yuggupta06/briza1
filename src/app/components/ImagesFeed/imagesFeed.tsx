@@ -1,17 +1,14 @@
 
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import axios from "axios";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import useSWRInfinite from "swr/infinite";
 
 import Loading from "@/app/components/Loading/loading";
 import type { PostType } from "@/types/post";
 
 import PostCard from "../Posts/post-card";
-import {
-  imagesFeedReducer,
-  initialState,
-} from "./imageFeedReducer";
 
 type FeedResponse = {
   success: boolean;
@@ -21,150 +18,109 @@ type FeedResponse = {
   error?: string;
 };
 
+
+
+const fetchFeedPage = async (url: string): Promise<FeedResponse> => {
+  const { data } = await axios.get<FeedResponse>(url);
+  return data;
+};
+
 export default function ImagesFeed() {
-  const [state, dispatch] = useReducer(
-    imagesFeedReducer,
-    initialState
-  );
-  const [currentUserId,setCurrentUserId]=useState<string>("")
-
-  const { feed } = state;
-
-  // Pagination and request control.
-  const cursorRef = useRef<string | null>(null);
-  const hasMoreImagesRef = useRef(true);
-  const isFetchingRef = useRef(false);
-  const controllerRef = useRef<AbortController | null>(null);
-
-  // Prevent duplicate posts across pages.
-  const loadedPostIdsRef = useRef<Set<string>>(new Set());
-
-  // IntersectionObserver target.
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  const fetchImages = useCallback(async () => {
+  // SWR creates a key for each cursor-based page.
+  const getKey = useCallback(
+    (pageIndex: number, previousPageData: FeedResponse | null) => {
+      // Stop requesting pages when the previous page was the last one.
+      if (
+        previousPageData &&
+        (!previousPageData.hasMore || !previousPageData.nextCursor)
+      ) {
+        return null;
+      }
+
+      // First page.
+      if (pageIndex === 0) {
+        return "/api/feed";
+      }
+
+      // Subsequent pages use the previous response's cursor.
+      return `/api/feed?cursor=${encodeURIComponent(
+        previousPageData!.nextCursor!
+      )}`;
+    },
+    []
+  );
+
+  const {
+    data: pages,
+    error: feedError,
+    isLoading,
+    isValidating,
+    size,
+    setSize,
+    mutate: mutateFeed,
+  } = useSWRInfinite<FeedResponse>(getKey, fetchFeedPage, {
+  initialSize: 1,
+  persistSize: true,
+
+  refreshInterval: 60_000,
+  revalidateAll: false,
+  revalidateFirstPage: true,
+
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  revalidateIfStale: false,
+
+  refreshWhenHidden: false,
+  refreshWhenOffline: false,
+
+  dedupingInterval: 2_000,
+});
+
+  // Combine the cached pages into one array for rendering.
+  const posts = useMemo(() => {
+    if (!pages) {
+      return [];
+    }
+
+    return pages.flatMap((page) => page.posts);
+  }, [pages]);
+
+  const lastPage = pages?.[pages.length - 1];
+
+  const hasMore = pages
+    ? Boolean(lastPage?.hasMore && lastPage.nextCursor)
+    : true;
+
+  const isLoadingMore = isValidating && posts.length > 0;
+
+  // Load the next page without manually maintaining a cursor.
+  const loadMore = useCallback(() => {
     if (
-      !hasMoreImagesRef.current ||
-      isFetchingRef.current
+      !hasMore ||
+      isValidating ||
+      !pages ||
+      pages.length < size
     ) {
       return;
     }
 
-    const controller = new AbortController();
-
-    controllerRef.current = controller;
-    isFetchingRef.current = true;
-
-    dispatch({
-      type: "SET_FEED_LOADING",
-      payload: true,
-    });
-
-    try {
-      const response = await axios.get<FeedResponse>(
-        "/api/feed",
-        {
-          params: {
-            cursor: cursorRef.current ?? undefined,
-          },
-          signal: controller.signal,
-        }
-      );
-
-      if (controller.signal.aborted) {
-        return;
-      }
-
-      const { posts, nextCursor } = response.data;
-
-      // Add only posts that have not already been loaded.
-      const newPosts = posts.filter((post) => {
-        if (loadedPostIdsRef.current.has(post._id)) {
-          return false;
-        }
-
-        loadedPostIdsRef.current.add(post._id);
-        return true;
-      });
-
-      if (newPosts.length > 0) {
-        dispatch({
-          type: "APPEND_POSTS",
-          payload: newPosts,
-        });
-      }
-
-      // Save the cursor for the next page.
-      cursorRef.current = nextCursor;
-
-      dispatch({
-        type: "SET_CURSOR",
-        payload: nextCursor,
-      });
-
-      const hasMore =
-        nextCursor !== null &&
-        response.data.hasMore !== false;
-
-      hasMoreImagesRef.current = hasMore;
-
-      dispatch({
-        type: "SET_HAS_MORE",
-        payload: hasMore,
-      });
-    } catch (error) {
-      if (
-        !controller.signal.aborted &&
-        !axios.isCancel(error)
-      ) {
-        console.error("Failed to fetch feed posts:", error);
-      }
-    } finally {
-      // Only the current request should reset loading state.
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
-        isFetchingRef.current = false;
-
-        dispatch({
-          type: "SET_FEED_LOADING",
-          payload: false,
-        });
-      }
-    }
-  }, []);
-useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const { data } = await axios.get("/api/profile/me", {
-          withCredentials: true,
-        });
-
-        setCurrentUserId(String(data.user._id));
-        
-      } catch (error) {
-        console.error("Failed to fetch current user", error);
-      }
-    };
-
-    fetchCurrentUser();
-  }, []);
-  // Fetch the first page on mount.
-  useEffect(() => {
-    void fetchImages();
-  }, [fetchImages]);
+    void setSize((currentSize) => currentSize + 1);
+  }, [hasMore, isValidating, pages, setSize, size]);
 
   // Infinite scrolling.
   useEffect(() => {
     const element = loaderRef.current;
 
-    if (!element || !feed.hasMore) {
+    if (!element || !hasMore || isLoading || feedError) {
       return;
     }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          void fetchImages();
+          loadMore();
         }
       },
       {
@@ -178,22 +134,32 @@ useEffect(() => {
     return () => {
       observer.disconnect();
     };
-  }, [feed.hasMore, feed.loading, fetchImages]);
-
-  // Cancel an outstanding request on unmount.
-  useEffect(() => {
-    return () => {
-      controllerRef.current?.abort();
-      controllerRef.current = null;
-      isFetchingRef.current = false;
-    };
-  }, []);
+  }, [hasMore, isLoading, feedError, loadMore]);
 
   // Initial loading state.
-  if (feed.loading && state.posts.length === 0) {
+  if (isLoading && !pages) {
     return (
       <div className="relative flex min-h-[50vh] w-full items-center justify-center">
         <Loading classname="70vh" />
+      </div>
+    );
+  }
+
+  // Initial request failed.
+  if (feedError && posts.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12">
+        <p className="text-center text-sm text-outline">
+          Failed to load posts. Please try again.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => void mutateFeed()}
+          className="rounded-lg bg-primary px-4 py-2 text-sm text-on-primary"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -203,11 +169,10 @@ useEffect(() => {
       aria-label="Posts feed"
       className="flex w-full flex-col gap-8"
     >
-      {state.posts.map((post) => (
+      {posts.map((post) => (
         <PostCard
           key={post._id}
           post={post}
-          currentUserId={currentUserId}
         />
       ))}
 
@@ -217,7 +182,7 @@ useEffect(() => {
         aria-label="Loading more posts"
         className="flex min-h-12 w-full items-center justify-center py-6"
       >
-        {feed.hasMore && feed.loading && state.posts.length > 0 && (
+        {hasMore && isLoadingMore && (
           <div
             role="status"
             aria-label="Loading more posts"
@@ -226,15 +191,32 @@ useEffect(() => {
         )}
       </div>
 
+      {/* Handle errors while retaining already-loaded posts. */}
+      {feedError && posts.length > 0 && (
+        <div className="flex flex-col items-center gap-3 pb-6">
+          <p className="text-center text-sm text-outline">
+            Could not load more posts.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => void mutateFeed()}
+            className="rounded-lg border border-outline px-4 py-2 text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* End of feed */}
-      {!feed.hasMore && state.posts.length > 0 && (
+      {!hasMore && posts.length > 0 && (
         <p className="pb-6 text-center text-sm text-outline">
           You&apos;re all caught up.
         </p>
       )}
 
       {/* Empty state */}
-      {!feed.loading && state.posts.length === 0 && (
+      {!isLoading && !feedError && posts.length === 0 && (
         <p className="py-12 text-center text-sm text-outline">
           No posts to show yet.
         </p>

@@ -101,7 +101,7 @@ export default function SearchBar() {
                 <Link
                   prefetch={false}
                   className="flex items-center gap-x-4 rounded-lg p-2 transition hover:bg-white/5"
-                  href={`/search/${encodeURIComponent(user.username)}`}
+                  href={`/profile/${encodeURIComponent(user.username)}`}
                 >
                   {user.imageUrl ? (
                     <Image

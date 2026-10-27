@@ -60,7 +60,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     {
       success: true,
       message: "Profile updated successfully.",
-      user:currentUser,
+      updatedUsername:currentUser.username,
+      updatedImageUrl:currentUser.imageUrl
     },
     { status: 200 }
   );

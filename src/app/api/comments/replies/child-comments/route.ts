@@ -1,36 +1,40 @@
-
-import { Types, type FilterQuery } from "mongoose";
+import type { FilterQuery } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
+import {
+  decodeCursor,
+  encodeCursor,
+} from "@/backend/lib/validations/cursor";
+import {
+  isValidObjectId,
+  toObjectId,
+} from "@/backend/lib/validations/objectId";
 import Comment from "@/backend/models/comment";
 import Post from "@/backend/models/post";
 
 const PAGE_SIZE = 10;
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  await Connect();
-
   const { userId } = await getAuthUser();
 
-  if (!userId || !Types.ObjectId.isValid(userId)) {
+  if (!isValidObjectId(userId)) {
     return NextResponse.json(
       { success: false, message: "Unauthorized." },
       { status: 401 }
     );
   }
 
-  const body = await request.json();
+  await Connect();
 
+  const body = await request.json();
   const { postId, parentCommentId, cursor } = body;
 
   if (
-    typeof postId !== "string" ||
-    !Types.ObjectId.isValid(postId) ||
-    typeof parentCommentId !== "string" ||
-    !Types.ObjectId.isValid(parentCommentId)
+    !isValidObjectId(postId) ||
+    !isValidObjectId(parentCommentId)
   ) {
     return NextResponse.json(
       { success: false, message: "Invalid post or parent comment ID." },
@@ -38,20 +42,28 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     );
   }
 
-  if (
-    cursor !== undefined &&
-    cursor !== null &&
-    cursor !== "" &&
-    (typeof cursor !== "string" || !Types.ObjectId.isValid(cursor))
-  ) {
-    return NextResponse.json(
-      { success: false, message: "Invalid cursor." },
-      { status: 400 }
-    );
-  }
+  const postObjectId = toObjectId(postId);
+  const rootCommentId = toObjectId(parentCommentId);
 
-  const postObjectId = new Types.ObjectId(postId);
-  const rootCommentId = new Types.ObjectId(parentCommentId);
+  let decodedCursor = null;
+
+  if (cursor !== undefined && cursor !== null && cursor !== "") {
+    if (typeof cursor !== "string") {
+      return NextResponse.json(
+        { success: false, message: "Invalid cursor." },
+        { status: 400 }
+      );
+    }
+
+    decodedCursor = decodeCursor(cursor);
+
+    if (!decodedCursor) {
+      return NextResponse.json(
+        { success: false, message: "Invalid cursor." },
+        { status: 400 }
+      );
+    }
+  }
 
   const postExists = await Post.exists({
     _id: postObjectId,
@@ -65,57 +77,34 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 
   const rootComment = await Comment.findOne({
-  _id: rootCommentId,
-  post: postObjectId,
-  $or: [
-    { parentCommentId: null },
-    { parentCommentId: { $exists: false } },
-  ],
-})
-  .select("_id")
-  .lean();
+    _id: rootCommentId,
+    post: postObjectId,
+    $or: [
+      { parentCommentId: null },
+      { parentCommentId: { $exists: false } },
+    ],
+  })
+    .select("_id")
+    .lean();
 
-if (!rootComment) {
-  return NextResponse.json(
-    { success: false, message: "Root comment not found." },
-    { status: 404 }
-  );
-}
+  if (!rootComment) {
+    return NextResponse.json(
+      { success: false, message: "Root comment not found." },
+      { status: 404 }
+    );
+  }
 
-  // Fetch replies belonging to this root comment.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filter: FilterQuery<any> = {
+  const filter: FilterQuery<InstanceType<typeof Comment>> = {
     post: postObjectId,
     parentCommentId: rootCommentId,
   };
 
-  if (cursor) {
-    const cursorComment = (await Comment.findOne({
-      _id: new Types.ObjectId(cursor),
-      post: postObjectId,
-      parentCommentId: rootCommentId,
-    })
-      .select("_id createdAt")
-      .lean()) as unknown as {
-        _id: Types.ObjectId;
-        createdAt: Date;
-      } | null;
-
-    if (!cursorComment) {
-      return NextResponse.json(
-        { success: false, message: "Invalid comment cursor." },
-        { status: 400 }
-      );
-    }
-
-    // Continue after the last reply from the previous page.
+  if (decodedCursor) {
     filter.$or = [
+      { createdAt: { $lt: decodedCursor.createdAt } },
       {
-        createdAt: { $lt: cursorComment.createdAt },
-      },
-      {
-        createdAt: cursorComment.createdAt,
-        _id: { $lt: cursorComment._id },
+        createdAt: decodedCursor.createdAt,
+        _id: { $lt: decodedCursor.id },
       },
     ];
   }
@@ -128,21 +117,23 @@ if (!rootComment) {
     .lean();
 
   const hasMore = fetchedReplies.length > PAGE_SIZE;
-  const replies = fetchedReplies.slice(0, PAGE_SIZE);
+  const replies = hasMore
+    ? fetchedReplies.slice(0, PAGE_SIZE)
+    : fetchedReplies;
 
   const serializedReplies = replies.map((reply) => {
     const author = reply.author as unknown as {
-      _id: Types.ObjectId;
+      _id: import("mongoose").Types.ObjectId;
       username: string;
       imageUrl?: string;
     } | null;
 
     const replyToValue = reply.replyToUserId as unknown as
       | {
-        _id: Types.ObjectId;
+        _id: import("mongoose").Types.ObjectId;
         username: string;
       }
-      | Types.ObjectId
+      | import("mongoose").Types.ObjectId
       | null;
 
     const replyToUser =
@@ -157,7 +148,7 @@ if (!rootComment) {
         : null;
 
     return {
-      _id: (reply._id as Types.ObjectId).toString(),
+      _id: String(reply._id),
       post: reply.post.toString(),
 
       author: author
@@ -168,12 +159,8 @@ if (!rootComment) {
         }
         : null,
 
-      parentCommentId:
-        reply.parentCommentId?.toString() ?? null,
-
-      replyToCommentId:
-        reply.replyToCommentId?.toString() ?? null,
-
+      parentCommentId: reply.parentCommentId?.toString() ?? null,
+      replyToCommentId: reply.replyToCommentId?.toString() ?? null,
       replyToUser,
 
       text: reply.text,
@@ -183,15 +170,22 @@ if (!rootComment) {
     };
   });
 
+  const lastReply = replies[replies.length - 1];
+
+  const nextCursor =
+    hasMore && lastReply
+      ? encodeCursor({
+        id: toObjectId(String(lastReply._id)),
+        createdAt: new Date(lastReply.createdAt),
+      })
+      : null;
+
   return NextResponse.json(
     {
       success: true,
       replies: serializedReplies,
       hasMore,
-      nextCursor:
-        hasMore && serializedReplies.length > 0
-          ? serializedReplies[serializedReplies.length - 1]._id
-          : null,
+      nextCursor,
     },
     { status: 200 }
   );
