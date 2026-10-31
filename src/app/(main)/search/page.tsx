@@ -113,7 +113,7 @@ export default function SearchBar() {
                     />
                   ) : (
                     <div
-                      className="h-[45px] w-[45px] shrink-0 rounded-full bg-gray-700"
+                      className="h-11.25 w-11.25 shrink-0 rounded-full bg-gray-700"
                       aria-hidden="true"
                     />
                   )}

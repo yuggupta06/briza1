@@ -48,7 +48,7 @@ function ProfilePostThumbnailComponent({
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center overflow-hidden p-3 sm:p-5">
-          <p className="line-clamp-6 whitespace-pre-wrap break-words text-xs text-white sm:text-sm">
+          <p className="line-clamp-6 whitespace-pre-wrap wrap-break-word text-xs text-white sm:text-sm">
             {post.caption || "Text post"}
           </p>
         </div>

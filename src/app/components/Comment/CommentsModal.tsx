@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
-import Image from "next/image";
-import Link from "next/link";
+import axios from "axios";
 import {
   ChevronDown,
   LoaderCircle,
@@ -18,16 +9,25 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import axios from "axios";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from "react";
 
-import type { CommentWithAuthor } from "@/types/comment";
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
+import { useRealtime } from "@/app/providers/RealtimeProvider";
 import {
   FALLBACK_AVATAR,
   formatCount,
   formatDate,
 } from "@/backend/lib/post-card-utils";
-import { useRealtime } from "@/app/providers/RealtimeProvider";
+import type { CommentWithAuthor } from "@/types/comment";
 
 type CommentItem = CommentWithAuthor & {
   repliesCount?: number;
@@ -104,7 +104,7 @@ function CommentsModalComponent({
   }, [open, onClose]);
 
   const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
+    async (event: SubmitEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       if (commentsLoading || isSubmittingComment) return;
@@ -122,7 +122,7 @@ function CommentsModalComponent({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+      className="fixed inset-0 z-100 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -131,7 +131,7 @@ function CommentsModalComponent({
         role="dialog"
         aria-modal="true"
         aria-labelledby={`comments-title-${postId}`}
-        className="flex h-[88dvh] max-h-[900px] w-full flex-col overflow-hidden rounded-t-2xl bg-neutral-950 text-white sm:h-[min(760px,90dvh)] sm:max-w-xl sm:rounded-2xl"
+        className="flex h-[88dvh] max-h-225 w-full flex-col overflow-hidden rounded-t-2xl bg-neutral-950 text-white sm:h-[min(760px,90dvh)] sm:max-w-xl sm:rounded-2xl"
       >
         <header className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-4 py-3">
           <div className="w-8" />
@@ -515,7 +515,7 @@ function CommentThreadComponent({
   );
 
   const handleSubmitReply = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
+    async (event: SubmitEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       const target = replyingTo;
@@ -583,7 +583,7 @@ function CommentThreadComponent({
         <div className="min-w-0 flex-1">
           <CommentHeader item={item} />
 
-          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">
+          <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-6 text-neutral-300">
             {item.text}
           </p>
 
@@ -670,7 +670,7 @@ function CommentThreadComponent({
                       <div className="min-w-0 flex-1">
                         <CommentHeader item={reply} />
 
-                        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">
+                        <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-6 text-neutral-300">
                           {reply.replyToUser?.username && (
                             <Link
                               href={`/profile/${reply.replyToUser.username}`}
@@ -838,7 +838,7 @@ function Avatar({
   return (
     <Link
       href={`/profile/${author.username}`}
-      className={`relative shrink-0 overflow-hidden rounded-full bg-neutral-800 ${small ? "h-8 w-8" : "h-[38px] w-[38px]"
+      className={`relative shrink-0 overflow-hidden rounded-full bg-neutral-800 ${small ? "h-8 w-8" : "h-9.5 w-9.5"
         }`}
     >
       <Image

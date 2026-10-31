@@ -1,18 +1,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { Connect } from "@/backend/lib/dbConnect";
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
+import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 
-import User from "@/backend/models/user";
 import Follow from "@/backend/models/follow";
+import User from "@/backend/models/user";
 
 import {
   createFollowCursor,
   getFollowCursorQuery,
   parseFollowCursor,
 } from "@/backend/lib/follow/followPagination";
+import { toObjectId } from "@/backend/lib/validations/objectId";
 
 export const GET = withErrorHandler(
   async (request: NextRequest) => {
@@ -65,7 +66,7 @@ export const GET = withErrorHandler(
       .select("_id followers following")
       .lean();
 
-    if (!targetUser) {
+    if (!targetUser || Array.isArray(targetUser)) {
       return NextResponse.json(
         { success: false, message: "User not found" },
         { status: 404 }
@@ -103,9 +104,9 @@ export const GET = withErrorHandler(
         nextCursor:
           hasMore && lastRecord
             ? createFollowCursor(
-                lastRecord.createdAt,
-                lastRecord._id
-              )
+              lastRecord.createdAt,
+              toObjectId(String(lastRecord._id))
+            )
             : null,
       },
     });

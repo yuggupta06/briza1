@@ -164,7 +164,7 @@ function FeedPostCard({ post }: { post: PostType }) {
 
         {post.postType === "image" && post.postUrl && (
           <div
-            className="relative aspect-square w-full select-none bg-neutral-900 md:aspect-[5/4] lg:aspect-[4/3]"
+            className="relative aspect-square w-full select-none bg-neutral-900 md:aspect-5/4 lg:aspect-4/3"
             onDoubleClick={handleImageDoubleClick}
           >
             <Image
@@ -199,7 +199,7 @@ function FeedPostCard({ post }: { post: PostType }) {
               controls
               playsInline
               muted
-              className="max-h-[650px] w-full object-contain md:max-h-[420px] lg:max-h-[480px]"
+              className="max-h-162.5 w-full object-contain md:max-h-105 lg:max-h-120"
             >
               Your browser does not support video playback.
             </video>
@@ -217,7 +217,7 @@ function FeedPostCard({ post }: { post: PostType }) {
         )}
 
         {post.postType === "text" && post.caption && (
-          <div className="whitespace-pre-wrap break-words px-5 py-8 text-base leading-7">
+          <div className="whitespace-pre-wrap wrap-break-word px-5 py-8 text-base leading-7">
             {post.caption}
           </div>
         )}
@@ -295,7 +295,7 @@ function FeedPostCard({ post }: { post: PostType }) {
               {post.author.username}
             </Link>
 
-            <span className="whitespace-pre-wrap break-words text-neutral-200">
+            <span className="whitespace-pre-wrap wrap-break-word text-neutral-200">
               {post.caption}
             </span>
           </div>

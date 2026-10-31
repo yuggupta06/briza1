@@ -261,7 +261,7 @@ export default function PostActionMenu({
 
       {/* Mobile bottom sheet */}
       {open && (
-        <div className="fixed inset-0 z-[100] md:hidden">
+        <div className="fixed inset-0 z-100 md:hidden">
           <button
             type="button"
             aria-label="Close post options"
@@ -312,7 +312,7 @@ export default function PostActionMenu({
       {confirmDelete && (
         <div
           ref={deleteRef}
-          className="fixed inset-0 z-[120] flex items-center justify-center
+          className="fixed inset-0 z-120 flex items-center justify-center
             bg-black/75 p-4 backdrop-blur-sm"
         >
           <div
@@ -373,7 +373,7 @@ export default function PostActionMenu({
       {message && (
         <div
           role="status"
-          className="fixed bottom-6 left-1/2 z-[130]
+          className="fixed bottom-6 left-1/2 z-130
             -translate-x-1/2 animate-in fade-in slide-in-from-bottom-2
             duration-200 rounded-full border border-neutral-700
             bg-neutral-900 px-4 py-3 text-center text-sm text-white

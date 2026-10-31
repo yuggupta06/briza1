@@ -650,7 +650,7 @@ useEffect(() => {
           <div className="min-w-0 w-full flex-1 space-y-5 md:pt-1">
             <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2 text-center sm:text-left">
-                <h1 className="break-words text-2xl font-semibold tracking-tight sm:text-3xl">
+                <h1 className="wrap-break-word text-2xl font-semibold tracking-tight sm:text-3xl">
                   {user.name}
                 </h1>
 
@@ -968,7 +968,7 @@ useEffect(() => {
             }
           }}
         >
-          <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-surface md:h-[min(92dvh,900px)] md:max-h-[92dvh] md:max-w-6xl md:flex-row md:rounded-2xl md:border md:border-white/10">
+          <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-surface md:h-[min(92dvh,900px)] md:max-h-[92dvh] md:max-w-6xl md:flex-row md:rounded-2xl md:border md:border-white/10">
             {/* Mobile header */}
             <div className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-outline-variant/25 bg-surface px-4 md:hidden">
               <button
@@ -1022,7 +1022,7 @@ useEffect(() => {
                   />
                 ) : (
                   <div className="flex min-h-64 w-full items-center justify-center p-8 text-center text-white">
-                    <p className="whitespace-pre-wrap break-words text-lg">
+                    <p className="whitespace-pre-wrap wrap-break-word text-lg">
                       {selectedPost.caption || "Text post"}
                     </p>
                   </div>
@@ -1110,7 +1110,7 @@ useEffect(() => {
                     Caption
                   </h2>
 
-                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-on-surface-variant">
+                  <p className="whitespace-pre-wrap wrap-break-word text-sm leading-6 text-on-surface-variant">
                     {selectedPost.caption || "No caption for this post."}
                   </p>
                 </section>
@@ -1218,7 +1218,7 @@ useEffect(() => {
       {/* Toast */}
       <div
         aria-live="polite"
-        className={`fixed bottom-5 left-1/2 z-[70] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${
+        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${
           toast
             ? "translate-y-0 opacity-100"
             : "pointer-events-none translate-y-3 opacity-0"

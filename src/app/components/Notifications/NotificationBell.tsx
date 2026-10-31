@@ -145,8 +145,8 @@ const handleDeleteNotification = async (
 
         {unreadCount > 0 && (
           <span
-            className="absolute right-0.5 top-0.5 flex h-[18px]
-              min-w-[18px] items-center justify-center rounded-full
+            className="absolute right-0.5 top-0.5 flex h-4.5
+              min-w-4.5 items-center justify-center rounded-full
               bg-blue-600 px-1 text-[10px] font-semibold text-white
               ring-2 ring-white dark:ring-[#111]"
           >
@@ -157,7 +157,7 @@ const handleDeleteNotification = async (
 
       {isOpen && (
         <div
-          className="fixed inset-0 z-[100] flex justify-end"
+          className="fixed inset-0 z-100 flex justify-end"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeDrawer();
@@ -175,7 +175,7 @@ const handleDeleteNotification = async (
             role="dialog"
             aria-modal="true"
             aria-labelledby="notification-title"
-            className="relative flex h-[100dvh] w-full flex-col
+            className="relative flex h-dvh w-full flex-col
               overflow-hidden border-l border-gray-200 bg-white
               shadow-2xl dark:border-white/10 dark:bg-[#111]
               sm:my-3 sm:mr-3 sm:h-[calc(100dvh-24px)]
@@ -333,7 +333,7 @@ const handleDeleteNotification = async (
                       : "No notifications yet"}
                   </h3>
 
-                  <p className="mt-2 max-w-[250px] text-sm leading-6
+                  <p className="mt-2 max-w-62.5 text-sm leading-6
                     text-gray-500 dark:text-gray-400"
                   >
                     {activeTab === "unread"
@@ -348,7 +348,7 @@ const handleDeleteNotification = async (
   <div
     key={notification._id}
     className="group flex items-center gap-1 transition
-      hover:bg-gray-50 dark:hover:bg-white/[0.04]"
+      hover:bg-gray-50 dark:hover:bg-white/4"
   >
   
 <Link

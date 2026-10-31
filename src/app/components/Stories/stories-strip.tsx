@@ -10,7 +10,7 @@ export function StoriesStrip() {
       <ul className="custom-scrollbar flex items-center gap-4 overflow-x-auto pb-1">
         <li className="shrink-0">
           <button type="button" className="group flex flex-col items-center gap-1.5">
-            <span className="relative block h-16 w-16 rounded-full border border-dashed border-outline p-[2px] transition-colors duration-200 group-hover:border-primary">
+            <span className="relative block h-16 w-16 rounded-full border border-dashed border-outline p-0.5 transition-colors duration-200 group-hover:border-primary">
               <span className="block h-full w-full overflow-hidden rounded-full bg-surface-container">
                 <Image
                   src={currentUserStoryAvatar || '/placeholder.svg'}
@@ -36,8 +36,8 @@ export function StoriesStrip() {
         {stories.map((story) => (
           <li key={story.handle} className="shrink-0">
             <button type="button" className="group flex flex-col items-center gap-1.5">
-              <span className="block h-16 w-16 rounded-full bg-gradient-to-tr from-secondary-container via-primary-container to-secondary p-[2px] transition-transform duration-200 group-hover:scale-105">
-                <span className="block h-full w-full overflow-hidden rounded-full bg-surface p-[2px]">
+              <span className="block h-16 w-16 rounded-full bg-linear-to-tr from-secondary-container via-primary-container to-secondary p-0.5 transition-transform duration-200 group-hover:scale-105">
+                <span className="block h-full w-full overflow-hidden rounded-full bg-surface p-0.5">
                   <Image
                     src={story.avatar || '/placeholder.svg'}
                     alt=""

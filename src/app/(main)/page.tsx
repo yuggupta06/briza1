@@ -10,7 +10,7 @@ export default function HomePage() {
   const { isRestoring } = useFeedScrollRestoration();
   return (
     <VideoPlaybackProvider>
-      <main className="mx-auto flex w-full max-w-[620px] flex-col gap-0 px-4 py-1 pb-24 md:px-0 md:py-6 md:pb-12">
+      <main className="mx-auto flex w-full max-w-155 flex-col gap-0 px-4 py-1 pb-24 md:px-0 md:py-6 md:pb-12">
         <h1 className="sr-only">Briza home feed</h1>
 
         {/* Home header */}

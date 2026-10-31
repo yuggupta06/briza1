@@ -12,9 +12,9 @@ import type { CloudinaryUploadWidgetResults } from "next-cloudinary";
 import { CldUploadWidget } from "next-cloudinary";
 import Image from "next/image";
 import {
+  SubmitEvent,
   useCallback,
   useState,
-  type FormEvent,
 } from "react";
 
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
@@ -102,7 +102,7 @@ export default function UserPage() {
   );
 
   const handleSave = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
+    async (event: SubmitEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       if (!currentUser || isSaving || isUploading) return;
@@ -155,8 +155,8 @@ export default function UserPage() {
         ) {
           throw new Error(
             data.error ||
-              data.message ||
-              "Could not update your profile."
+            data.message ||
+            "Could not update your profile."
           );
         }
 
@@ -168,13 +168,13 @@ export default function UserPage() {
           (previous) =>
             previous?.user
               ? {
-                  ...previous,
-                  user: {
-                    ...previous.user,
-                    username: newUsername,
-                    imageUrl: newImageUrl,
-                  },
-                }
+                ...previous,
+                user: {
+                  ...previous.user,
+                  username: newUsername,
+                  imageUrl: newImageUrl,
+                },
+              }
               : previous,
           { revalidate: false }
         );
@@ -191,8 +191,8 @@ export default function UserPage() {
           setSaveError(
             axios.isAxiosError(error)
               ? error.response?.data?.error ||
-                  error.response?.data?.message ||
-                  "Could not save your profile."
+              error.response?.data?.message ||
+              "Could not save your profile."
               : error instanceof Error
                 ? error.message
                 : "Could not save your profile."
@@ -268,8 +268,8 @@ export default function UserPage() {
       setDeleteError(
         axios.isAxiosError(error)
           ? error.response?.data?.message ||
-              error.response?.data?.error ||
-              "Could not delete your account. Please try again."
+          error.response?.data?.error ||
+          "Could not delete your account. Please try again."
           : error instanceof Error
             ? error.message
             : "Could not delete your account. Please try again."
@@ -333,7 +333,7 @@ export default function UserPage() {
       {/* Edit profile modal */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5"
+          className="fixed inset-0 z-80 flex items-center justify-center overflow-y-auto bg-black/75 p-3 sm:p-5"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeModal();
@@ -507,7 +507,7 @@ export default function UserPage() {
       {/* Delete account confirmation modal */}
       {deleteDialogOpen && (
         <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4"
+          className="fixed inset-0 z-90 flex items-center justify-center bg-black/75 p-4"
           onMouseDown={(event) => {
             if (
               event.target === event.currentTarget &&

@@ -69,7 +69,7 @@ export default function RealtimeNotificationToast() {
       :`/profile?post=${toast.post}`
 
     return (
-        <div className="fixed right-4 top-4 z-[100] w-[calc(100%-2rem)] max-w-sm">
+        <div className="fixed right-4 top-4 z-100 w-[calc(100%-2rem)] max-w-sm">
             <div className="flex items-center gap-3 rounded-xl border bg-background p-4 shadow-xl">
 
                 <Link

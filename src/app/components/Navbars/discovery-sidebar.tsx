@@ -1,4 +1,4 @@
-import { creators, currentUser, currentUserCardAvatar, footerLinks, topics } from '@/backend/lib/data'
+import { creators, footerLinks, topics } from '@/backend/lib/data'
 import Link from 'next/link'
 import { Avatar } from '../ui/avatar'
 import { Icon } from '../ui/briza-icon'
@@ -11,18 +11,7 @@ export function DiscoverySidebar() {
       className="custom-scrollbar sticky top-0 hidden h-screen w-80 shrink-0 flex-col gap-6 overflow-y-auto border-l border-outline-variant/30 p-6 lg:flex"
     >
       <div className="flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
-        <div className="flex items-center gap-3">
-          <Avatar
-            src={currentUserCardAvatar}
-            alt={currentUser.avatarAlt}
-            size={44}
-            className="ring-2 ring-primary/30"
-          />
-          <div className="flex flex-col">
-            <span className="text-label-md font-semibold text-on-surface">{currentUser.name}</span>
-            <span className="text-label-sm text-outline">@{currentUser.handle}</span>
-          </div>
-        </div>
+   
         <button
           type="button"
           className="text-label-sm font-semibold text-primary transition-colors hover:text-on-surface"
