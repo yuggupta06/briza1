@@ -28,54 +28,78 @@ const postId = searchParams.get("post");
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    if (!username || isCurrentUserLoading) return;
+  if (isCurrentUserLoading || !username) return;
 
-    if (currentUsername && currentUsername === username.toLowerCase()) {
-  router.replace(
-    postId
-      ? `/profile?post=${encodeURIComponent(postId)}`
-      : "/profile"
-  );
-  return;
-}
+  if (
+    currentUsername &&
+    currentUsername === username.toLowerCase()
+  ) {
+    router.replace(
+      postId
+        ? `/profile?post=${encodeURIComponent(postId)}`
+        : "/profile"
+    );
+  }
+}, [
+  username,
+  currentUsername,
+  isCurrentUserLoading,
+  router,
+  postId,
+]);
+useEffect(() => {
+  if (!username || isCurrentUserLoading) return;
 
-    const controller = new AbortController();
+  // Don't fetch the public profile if this is the owner.
+  if (
+    currentUsername &&
+    currentUsername === username.toLowerCase()
+  ) {
+    return;
+  }
 
-    async function loadProfile() {
-      try {
-        setLoading(true);
-        setError("");
+  const controller = new AbortController();
 
-        const response = await axios.get(
-          `/api/profile/${encodeURIComponent(username)}`,
-          { signal: controller.signal }
-        );
+  async function loadProfile() {
+    try {
+      setLoading(true);
+      setError("");
 
-        setUser(response.data.user);
-      } catch (error) {
-        if (controller.signal.aborted) return;
+      const response = await axios.get(
+        `/api/profile/${encodeURIComponent(username)}`,
+        { signal: controller.signal }
+      );
 
-        setUser(null);
+      setUser(response.data.user);
+    } catch (error) {
+      if (controller.signal.aborted) return;
 
-        if (
-          axios.isAxiosError(error) &&
-          error.response?.status === 404
-        ) {
-          setError("User not found.");
-        } else {
-          setError("Failed to load profile. Please try again.");
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+      setUser(null);
+
+      if (
+        axios.isAxiosError(error) &&
+        error.response?.status === 404
+      ) {
+        setError("User not found.");
+      } else {
+        setError("Failed to load profile. Please try again.");
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
       }
     }
+  }
 
-    void loadProfile();
+  void loadProfile();
 
-    return () => controller.abort();
-  }, [username, currentUsername, isCurrentUserLoading, router, retryCount, postId]);
+  return () => controller.abort();
+}, [
+  username,
+  currentUsername,
+  isCurrentUserLoading,
+  retryCount,
+]);
 
   if (loading || isCurrentUserLoading) {
     return (
