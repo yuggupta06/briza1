@@ -5,6 +5,8 @@ import axios from "axios";
 import { useCallback, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { PostType } from "@/types/post";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 
 interface UseProfileActionsProps {
   isOwner: boolean;
@@ -13,6 +15,9 @@ interface UseProfileActionsProps {
 
   posts: PostType[];
   likedPosts: PostType[];
+
+  totalPosts: number;
+  setTotalPosts: Dispatch<SetStateAction<number>>;
 
   setPosts: Dispatch<SetStateAction<PostType[]>>;
   setLikedPosts: Dispatch<SetStateAction<PostType[]>>;
@@ -48,6 +53,8 @@ export function useProfileActions({
   selectedPost,
   posts,
   likedPosts,
+  totalPosts,
+  setTotalPosts,
   setPosts,
   setLikedPosts,
   setSelectedPost,
@@ -55,6 +62,11 @@ export function useProfileActions({
   setCommentsModalOpen,
   showToast,
 }: UseProfileActionsProps) {
+  // for changing the url after deleting the post
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { mutateCurrentUser } = useCurrentUser();
+
   const [isDeletingPost, setIsDeletingPost] = useState(false);
 
   // Prevents duplicate delete requests before React re-renders.
@@ -86,6 +98,7 @@ export function useProfileActions({
     // Save the previous state for rollback.
     const previousPosts = posts;
     const previousLikedPosts = likedPosts;
+    const previousTotalPosts = totalPosts;
     const previousSelectedPost = selectedPost;
     const previousCommentsModalOpen = commentsModalOpen;
 
@@ -98,9 +111,26 @@ export function useProfileActions({
       currentLikedPosts.filter((post) => post._id !== deletedId)
     );
 
+    // Optimistically update the profile post count.
+    setTotalPosts((current) => Math.max(0, current - 1));
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("post");
+
+    const query = params.toString();
+
+    router.replace(
+      query
+        ? `${window.location.pathname}?${query}`
+        : window.location.pathname,
+      { scroll: false }
+    );
+
     // Close the post and comments modals immediately.
     setSelectedPost(null);
     setCommentsModalOpen(false);
+    showToast("Post deleted.");
+    setIsDeletingPost(false);
 
     try {
       const response = await axios.post("/api/posts/delete", {
@@ -110,18 +140,36 @@ export function useProfileActions({
       if (response.data?.success === false) {
         throw new Error(
           response.data.message ||
-            "Unable to delete this post."
+          "Unable to delete this post."
+        );
+      }
+      if (isOwner) {
+        await mutateCurrentUser(
+          (currentData) => {
+            if (!currentData) return currentData;
+
+            return {
+              ...currentData,
+              user: {
+                ...currentData.user,
+                totalPosts: Math.max(
+                  0,
+                  (currentData.user.totalPosts ?? 0) - 1
+                ),
+              },
+            };
+          },
+          { revalidate: false }
         );
       }
 
-      // Server confirmed deletion.
-      showToast("Post deleted.");
     } catch (error) {
       console.error("Unable to delete post:", error);
 
-      // Restore the previous lists.
+      // Restore the previous lists and count.
       setPosts(previousPosts);
       setLikedPosts(previousLikedPosts);
+      setTotalPosts(previousTotalPosts);
 
       // Restore the post modal and comments modal state.
       setSelectedPost(previousSelectedPost);
@@ -135,7 +183,7 @@ export function useProfileActions({
       );
     } finally {
       deletingPostRef.current = false;
-      setIsDeletingPost(false);
+
     }
   }, [
     isOwner,
@@ -143,12 +191,16 @@ export function useProfileActions({
     selectedPost,
     posts,
     likedPosts,
+    totalPosts,
+    setTotalPosts,
     setPosts,
     setLikedPosts,
     setSelectedPost,
     commentsModalOpen,
     setCommentsModalOpen,
     showToast,
+    router,
+    searchParams,
   ]);
 
   return {

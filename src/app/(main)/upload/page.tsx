@@ -16,7 +16,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { useCallback, useEffect, useState } from "react";
 import toastIcon from "@/helpers/toastHelper";
 import { notoSerif } from "@/app/fonts";
-
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 type UploadedMedia = {
   url: string;
   publicId: string;
@@ -27,6 +27,8 @@ type UploadedMedia = {
 };
 
 export default function UploadSection() {
+
+  const { mutateCurrentUser } = useCurrentUser();
   const [uploadedMedia, setUploadedMedia] =
     useState<UploadedMedia | null>(null);
   const [caption, setCaption] = useState("");
@@ -34,6 +36,7 @@ export default function UploadSection() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const isModalOpen = uploadedMedia !== null || showSuccess;
+
 
   const closeModal = useCallback(() => {
     if (isSaving) return;
@@ -44,32 +47,32 @@ export default function UploadSection() {
   }, [isSaving]);
 
   // Lock background scrolling while either modal is open.
- 
 
-useEffect(() => {
-  if (!isModalOpen) return;
 
-  const body = document.body;
-  const html = document.documentElement;
+  useEffect(() => {
+    if (!isModalOpen) return;
 
-  body.style.overflow = "hidden";
-  html.style.overflow = "hidden";
+    const body = document.body;
+    const html = document.documentElement;
 
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && !isSaving) {
-      closeModal();
-    }
-  };
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
 
-  window.addEventListener("keydown", handleKeyDown);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isSaving) {
+        closeModal();
+      }
+    };
 
-  return () => {
-    body.style.overflow = "";
-    html.style.overflow = "";
+    window.addEventListener("keydown", handleKeyDown);
 
-    window.removeEventListener("keydown", handleKeyDown);
-  };
-}, [isModalOpen, isSaving, closeModal]);
+    return () => {
+      body.style.overflow = "";
+      html.style.overflow = "";
+
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isModalOpen, isSaving, closeModal]);
 
 
 
@@ -125,15 +128,27 @@ useEffect(() => {
       setUploadedMedia(null);
       setCaption("");
       setShowSuccess(true);
+      await mutateCurrentUser(
+        (currentData) => {
+          if (!currentData) return currentData;
 
-      await toastIcon("Post published successfully");
+          return {
+            ...currentData,
+            user: {
+              ...currentData.user,
+              totalPosts: (currentData.user.totalPosts ?? 0) + 1,
+            },
+          };
+        },
+        { revalidate: false }
+      );
     } catch (error) {
       console.error("Error publishing post:", error);
 
       if (axios.isAxiosError(error)) {
         toast.error(
           error.response?.data?.message ||
-            "Failed to publish post"
+          "Failed to publish post"
         );
       } else {
         toast.error("Failed to publish post");
@@ -227,7 +242,7 @@ useEffect(() => {
       {/* Create post modal */}
       {uploadedMedia && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6"
+          className="fixed inset-0 z-100 flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6"
           onMouseDown={(event) => {
             if (
               event.target === event.currentTarget &&
@@ -319,7 +334,7 @@ useEffect(() => {
                   maxLength={500}
                   rows={4}
                   disabled={isSaving}
-                  className="min-h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm leading-6 text-white outline-none transition placeholder:text-gray-500 focus:border-[#78e6c8] disabled:opacity-60"
+                  className="min-h-24 w-full resize-y rounded-xl border border-white/10 bg-white/4 p-3 text-sm leading-6 text-white outline-none transition placeholder:text-gray-500 focus:border-[#78e6c8] disabled:opacity-60"
                 />
 
                 <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
@@ -331,7 +346,7 @@ useEffect(() => {
               </div>
 
               {/* File details */}
-              <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.03] p-3">
+              <div className="mt-4 rounded-xl border border-white/5 bg-white/3 p-3">
                 <p className="truncate text-sm font-medium text-gray-200">
                   {uploadedMedia.fileName}
                 </p>
@@ -342,9 +357,9 @@ useEffect(() => {
                   {" · "}
                   {uploadedMedia.bytes > 0
                     ? `${(
-                        uploadedMedia.bytes /
-                        (1024 * 1024)
-                      ).toFixed(2)} MB`
+                      uploadedMedia.bytes /
+                      (1024 * 1024)
+                    ).toFixed(2)} MB`
                     : "Size unavailable"}
                 </p>
               </div>
@@ -377,7 +392,7 @@ useEffect(() => {
 
       {/* Success modal */}
       {showSuccess && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
+        <div className="fixed inset-0 z-100 flex items-center justify-center overflow-y-auto bg-black/80 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
           <section
             role="dialog"
             aria-modal="true"

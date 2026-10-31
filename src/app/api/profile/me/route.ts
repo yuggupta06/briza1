@@ -1,9 +1,11 @@
+
 import { NextResponse } from "next/server";
 
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 import User from "@/backend/models/user";
+import Post from "@/backend/models/post";
 
 export const GET = withErrorHandler(async () => {
     await Connect();
@@ -26,12 +28,19 @@ export const GET = withErrorHandler(async () => {
         );
     }
 
+    // Get the total number of non-deleted posts.
+    const totalPosts = await Post.countDocuments({
+        author: user._id,
+        deleted: false,
+    });
+
     return NextResponse.json(
         {
             success: true,
             user: {
                 ...user,
                 _id: String(user._id),
+                totalPosts,
             },
         },
         {

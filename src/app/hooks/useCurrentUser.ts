@@ -1,11 +1,12 @@
+
 "use client";
 
 import useSWR from "swr";
 import axios from "axios";
 import { UserType } from "@/types/user";
 
-
 type CurrentUserResponse = {
+  success: boolean;
   user: UserType;
 };
 
@@ -33,7 +34,7 @@ export function useCurrentUser() {
     );
 
   return {
-    currentUser: data?.user ,
+    currentUser: data?.user,
     isLoading,
     error,
     mutateCurrentUser: mutate,

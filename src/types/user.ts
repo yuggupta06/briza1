@@ -6,4 +6,5 @@ export type UserType = {
   email: string;
   followers: number;
   following: number;
+  totalPosts?: number;
 };

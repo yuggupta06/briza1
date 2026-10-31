@@ -36,11 +36,11 @@ import FollowButton from "@/app/components/follow/FollowButton";
 import FollowStats from "@/app/components/follow/FollowStats";
 import { Avatar } from "@/app/components/ui/avatar";
 
+import { usePaginatedPosts } from "@/app/hooks/posts/use-paginated-posts";
 import { usePostInteractions } from "@/app/hooks/posts/use-post-interactions";
+import { useProfileActions } from "@/app/hooks/posts/use-profile-actions";
 import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
-import { usePaginatedPosts } from "@/app/hooks/posts/use-paginated-posts";
-import { useProfileActions } from "@/app/hooks/posts/use-profile-actions";
 
 import { formatCount, formatDate } from "@/backend/lib/post-card-utils";
 import type { PostType } from "@/types/post";
@@ -98,6 +98,7 @@ function ProfileCanvas({
   );
 
   // Post modal and profile UI state.
+  const [totalPosts, setTotalPosts] = useState(user.totalPosts ?? 0);
   const [selectedPost, setSelectedPost] = useState<PostType | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -109,7 +110,7 @@ function ProfileCanvas({
 
   // URL synchronization refs.
   const openedFromClickRef = useRef<string | null>(null);
-  
+
   const previousPostIdRef = useRef<string | null>(postId);
 
   const profileKey = isOwner ? user._id : user.username;
@@ -132,7 +133,10 @@ function ProfileCanvas({
     },
     [isOwner, user.username]
   );
-
+  // when profile user changes
+  useEffect(() => {
+    setTotalPosts(user.totalPosts??0);
+  }, [user._id, user.totalPosts]);
   const fetchLikedPostsPage = useCallback(
     async (cursor: string | null) => {
       const response = await axios.get("/api/posts/liked", {
@@ -219,6 +223,8 @@ function ProfileCanvas({
     selectedPost,
     posts,
     likedPosts,
+    totalPosts,
+    setTotalPosts,
     setPosts,
     setLikedPosts,
     setSelectedPost,
@@ -244,13 +250,13 @@ function ProfileCanvas({
       previousPosts.map((post) =>
         post.author._id === user._id
           ? {
-              ...post,
-              author: {
-                ...post.author,
-                username: user.username,
-                imageUrl: user.imageUrl,
-              },
-            }
+            ...post,
+            author: {
+              ...post.author,
+              username: user.username,
+              imageUrl: user.imageUrl,
+            },
+          }
           : post
       )
     );
@@ -259,13 +265,13 @@ function ProfileCanvas({
       previousPosts.map((post) =>
         post.author._id === user._id
           ? {
-              ...post,
-              author: {
-                ...post.author,
-                username: user.username,
-                imageUrl: user.imageUrl,
-              },
-            }
+            ...post,
+            author: {
+              ...post.author,
+              username: user.username,
+              imageUrl: user.imageUrl,
+            },
+          }
           : post
       )
     );
@@ -273,13 +279,13 @@ function ProfileCanvas({
     setSelectedPost((previousPost) =>
       previousPost && previousPost.author._id === user._id
         ? {
-            ...previousPost,
-            author: {
-              ...previousPost.author,
-              username: user.username,
-              imageUrl: user.imageUrl,
-            },
-          }
+          ...previousPost,
+          author: {
+            ...previousPost.author,
+            username: user.username,
+            imageUrl: user.imageUrl,
+          },
+        }
         : previousPost
     );
   }, [user._id, user.username, user.imageUrl, setPosts, setLikedPosts]);
@@ -356,11 +362,11 @@ function ProfileCanvas({
   } = usePostInteractions({
     post: selectedPost
       ? {
-          _id: selectedPost._id,
-          isLiked: selectedPost.isLiked,
-          likesCount: selectedPost.likesCount,
-          commentsCount: selectedPost.commentsCount,
-        }
+        _id: selectedPost._id,
+        isLiked: selectedPost.isLiked,
+        likesCount: selectedPost.likesCount,
+        commentsCount: selectedPost.commentsCount,
+      }
       : null,
     onCountsChange: handleCountsChange,
   });
@@ -432,84 +438,84 @@ function ProfileCanvas({
   // Post URL synchronization
   // --------------------------------------------------
 
-  
 
-useEffect(() => {
-  const previousPostId = previousPostIdRef.current;
-  previousPostIdRef.current = postId;
 
-  if (!postId) {
-    if (previousPostId !== null) {
-      setSelectedPost(null);
-    }
+  useEffect(() => {
+    const previousPostId = previousPostIdRef.current;
+    previousPostIdRef.current = postId;
 
-    openedFromClickRef.current = null;
-    return;
-  }
-
-  // The post was already loaded by clicking a profile post.
-  if (openedFromClickRef.current === postId) {
-    openedFromClickRef.current = null;
-    return;
-  }
-
-  // Wait for a pending click navigation to update the URL.
-  if (openedFromClickRef.current) return;
-
-  // The requested post is already displayed.
-  if (selectedPost?._id === postId) return;
-
-  let cancelled = false;
-
-  const fetchPost = async () => {
-    try {
-      const { data } = await axios.get(
-        `/api/posts/${encodeURIComponent(postId)}`
-      );
-
-      if (cancelled) return;
-
-      const post = data.post;
-
-      if (!post) {
-        throw new Error("Post not found.");
+    if (!postId) {
+      if (previousPostId !== null) {
+        setSelectedPost(null);
       }
 
-      // If the post belongs to another profile,
-      // navigate to its author's profile.
-      if (
-        post.author.username.toLowerCase() !==
-        user.username.toLowerCase()
-      ) {
-        router.replace(
-          `/profile/${encodeURIComponent(
-            post.author.username
-          )}?post=${encodeURIComponent(postId)}`
+      openedFromClickRef.current = null;
+      return;
+    }
+
+    // The post was already loaded by clicking a profile post.
+    if (openedFromClickRef.current === postId) {
+      openedFromClickRef.current = null;
+      return;
+    }
+
+    // Wait for a pending click navigation to update the URL.
+    if (openedFromClickRef.current) return;
+
+    // The requested post is already displayed.
+    if (selectedPost?._id === postId) return;
+
+    let cancelled = false;
+
+    const fetchPost = async () => {
+      try {
+        const { data } = await axios.get(
+          `/api/posts/${encodeURIComponent(postId)}`
         );
 
-        return;
+        if (cancelled) return;
+
+        const post = data.post;
+
+        if (!post) {
+          throw new Error("Post not found.");
+        }
+
+        // If the post belongs to another profile,
+        // navigate to its author's profile.
+        if (
+          post.author.username.toLowerCase() !==
+          user.username.toLowerCase()
+        ) {
+          router.replace(
+            `/profile/${encodeURIComponent(
+              post.author.username
+            )}?post=${encodeURIComponent(postId)}`
+          );
+
+          return;
+        }
+
+        setSelectedPost(post);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Failed to fetch shared post:", error);
+        setSelectedPost(null);
       }
+    };
 
-      setSelectedPost(post);
-    } catch (error) {
-      if (cancelled) return;
+    void fetchPost();
 
-      console.error("Failed to fetch shared post:", error);
-      setSelectedPost(null);
-    }
-  };
-
-  void fetchPost();
-
-  return () => {
-    cancelled = true;
-  };
-}, [
-  postId,
-  router,
-  selectedPost?._id,
-  user.username,
-]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    postId,
+    router,
+    selectedPost?._id,
+    user.username,
+  ]);
 
 
 
@@ -623,12 +629,12 @@ useEffect(() => {
     label: string;
     Icon: typeof Grid2X2;
   }[] = isOwner
-    ? [
+      ? [
         { id: "posts", label: "Posts", Icon: Grid2X2 },
         { id: "saved", label: "Saved", Icon: Bookmark },
         { id: "liked", label: "Liked", Icon: Heart },
       ]
-    : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
+      : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
 
   // --------------------------------------------------
   // Render
@@ -750,10 +756,10 @@ useEffect(() => {
                 className="text-left"
               >
                 <span className="font-semibold">
-                  {formatCount(posts.length)}
+                  {formatCount(totalPosts)}
                 </span>
                 <span className="ml-1.5 text-sm text-outline">
-                  posts
+                  posts 
                 </span>
               </button>
 
@@ -781,11 +787,10 @@ useEffect(() => {
               type="button"
               onClick={() => setTab(id)}
               aria-current={tab === id ? "page" : undefined}
-              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${
-                tab === id
-                  ? "text-on-surface"
-                  : "text-outline hover:text-on-surface"
-              }`}
+              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${tab === id
+                ? "text-on-surface"
+                : "text-outline hover:text-on-surface"
+                }`}
             >
               <TabIcon
                 size={17}
@@ -911,46 +916,46 @@ useEffect(() => {
             {(tab === "posts"
               ? hasMorePosts
               : hasMoreLikedPosts) && (
-              <div className="flex justify-center py-4">
-                <button
-                  type="button"
-                  disabled={
-                    tab === "liked"
-                      ? isLoadingMoreLikedPosts || !nextLikedCursor
-                      : isLoadingMorePosts || !nextPostsCursor
-                  }
-                  onClick={() => {
-                    if (tab === "liked") {
-                      void loadMoreLikedPosts();
-                    } else {
-                      void loadMorePosts();
+                <div className="flex justify-center py-4">
+                  <button
+                    type="button"
+                    disabled={
+                      tab === "liked"
+                        ? isLoadingMoreLikedPosts || !nextLikedCursor
+                        : isLoadingMorePosts || !nextPostsCursor
                     }
-                  }}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-outline-variant/40 px-5 py-2.5 text-sm transition hover:bg-surface-container-high disabled:opacity-50"
-                >
-                  {(tab === "liked"
-                    ? isLoadingMoreLikedPosts
-                    : isLoadingMorePosts) && (
-                    <LoaderCircle
-                      size={16}
-                      className="animate-spin"
-                    />
-                  )}
-
-                  {(tab === "liked"
-                    ? isLoadingMoreLikedPosts
-                    : isLoadingMorePosts)
-                    ? "Loading posts..."
-                    : "Load more"}
-
-                  {!(
-                    tab === "liked"
+                    onClick={() => {
+                      if (tab === "liked") {
+                        void loadMoreLikedPosts();
+                      } else {
+                        void loadMorePosts();
+                      }
+                    }}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-outline-variant/40 px-5 py-2.5 text-sm transition hover:bg-surface-container-high disabled:opacity-50"
+                  >
+                    {(tab === "liked"
                       ? isLoadingMoreLikedPosts
-                      : isLoadingMorePosts
-                  ) && <ChevronDown size={16} />}
-                </button>
-              </div>
-            )}
+                      : isLoadingMorePosts) && (
+                        <LoaderCircle
+                          size={16}
+                          className="animate-spin"
+                        />
+                      )}
+
+                    {(tab === "liked"
+                      ? isLoadingMoreLikedPosts
+                      : isLoadingMorePosts)
+                      ? "Loading posts..."
+                      : "Load more"}
+
+                    {!(
+                      tab === "liked"
+                        ? isLoadingMoreLikedPosts
+                        : isLoadingMorePosts
+                    ) && <ChevronDown size={16} />}
+                  </button>
+                </div>
+              )}
           </div>
         )}
       </main>
@@ -1124,11 +1129,10 @@ useEffect(() => {
                       disabled={isLiking}
                       aria-label={liked ? "Unlike post" : "Like post"}
                       aria-pressed={liked}
-                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${
-                        liked
-                          ? "text-rose-500"
-                          : "text-on-surface hover:text-rose-500"
-                      }`}
+                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${liked
+                        ? "text-rose-500"
+                        : "text-on-surface hover:text-rose-500"
+                        }`}
                     >
                       <Heart
                         size={22}
@@ -1218,11 +1222,10 @@ useEffect(() => {
       {/* Toast */}
       <div
         aria-live="polite"
-        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${
-          toast
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none translate-y-3 opacity-0"
-        }`}
+        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${toast
+          ? "translate-y-0 opacity-100"
+          : "pointer-events-none translate-y-3 opacity-0"
+          }`}
       >
         {toast}
       </div>

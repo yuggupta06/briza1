@@ -18,7 +18,7 @@ type Tab = "all" | "unread";
 
 export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("all");
+  const [activeTab, setActiveTab] = useState<Tab>("unread");
 
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -139,7 +139,7 @@ const handleDeleteNotification = async (
         className="relative flex h-10 w-10 shrink-0 items-center
           justify-center rounded-full text-gray-700 transition
           hover:bg-gray-100 dark:text-gray-200
-          dark:hover:bg-white/10"
+          dark:hover:bg-white/10 cursor-pointer"
       >
         <Bell size={22} strokeWidth={1.8} />
 

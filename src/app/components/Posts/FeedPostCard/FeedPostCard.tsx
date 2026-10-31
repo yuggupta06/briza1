@@ -32,6 +32,7 @@ import {
 } from "@/backend/lib/post-card-utils";
 import PostTimestamp from "../PostTimestamp";
 import PostActionMenu from "./PostActionMenu";
+import ProfileHoverTrigger from "@/app/components/User/ProfileHoverTrigger";
 
 function FeedPostCard({ post }: { post: PostType }) {
   const [saved, setSaved] = useState(false);
@@ -122,7 +123,8 @@ function FeedPostCard({ post }: { post: PostType }) {
     <>
       <article className="w-full min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white py-3">
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex items-center gap-3">
+
             <Link
               href={`/profile/${post.author.username}`}
               className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full bg-neutral-800"
@@ -137,13 +139,16 @@ function FeedPostCard({ post }: { post: PostType }) {
               />
             </Link>
 
-            <div className="min-w-0">
-              <Link
-                href={`/profile/${post.author.username}`}
-                className="block truncate text-sm font-semibold hover:underline"
-              >
-                {post.author.username}
-              </Link>
+
+            <div className="flex min-w-0 flex-col">
+              <ProfileHoverTrigger username={post.author.username}>
+                <Link
+                  href={`/profile/${post.author.username}`}
+                  className="block truncate text-sm font-semibold hover:underline"
+                >
+                  {post.author.username}
+                </Link>
+              </ProfileHoverTrigger>
 
               {post.createdAt && (
                 <PostTimestamp
