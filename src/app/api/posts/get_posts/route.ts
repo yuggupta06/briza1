@@ -29,8 +29,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
                                     },
                                     null // if deleted, return null
                                 ]
-                                    }
-                                }
                             }
                         }
                     }

@@ -58,7 +58,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       success: false,
     });
   }
-}
+});
 
 // Optional: set runtime if you want edge or node
 export const config = {

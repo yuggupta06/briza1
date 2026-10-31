@@ -27,24 +27,24 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
                                         { $eq: ["$$post.posturl", url] }, // find the matching post
                                         {
                                             $mergeObjects: [
-                                                "$$post", // keep other fields of the post
+                                                "$$post",
                                                 {
                                                     likes: {
                                                         $cond: [
-                                                            { $in: [userId, "$$post.likes"] }, // if user already liked
-                                                            { $setDifference: ["$$post.likes", [String(userId)]] }, // remove userId
-                                                            { $concatArrays: ["$$post.likes", [String(userId)]] }  // else add userId
-                                                        ]
-                                                    };
-                                                }
-                                            ]
+                                                            { $in: [userId, "$$post.likes"] },
+                                                            { $setDifference: ["$$post.likes", [String(userId)]] },
+                                                            { $concatArrays: ["$$post.likes", [String(userId)]] },
+                                                        ],
+                                                    },
+                                                },
+                                            ],
                                         },
-                                        "$$post" // return post unchanged if not matching
-                                    ]
-                                }
-                            }
-                        }
-                    }
+                                        "$$post",
+                                    ],
+                                },
+                            },
+                        },
+                    },
                 }
             ],
             { new: true }
