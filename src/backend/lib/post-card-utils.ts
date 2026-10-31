@@ -16,7 +16,6 @@ export function formatCount(count: number): string {
 
 export function formatDate(date: string | Date): string {
   const timestamp = new Date(date).getTime();
-
   if (Number.isNaN(timestamp)) return "";
 
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -37,6 +36,7 @@ export function formatDate(date: string | Date): string {
 
   const days = Math.floor(hours / 24);
   if (days < 30) {
+
     return `${days} ${days === 1 ? "day" : "days"} ago`;
   }
 

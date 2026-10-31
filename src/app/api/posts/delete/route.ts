@@ -6,12 +6,15 @@ import Like from "@/backend/models/like";
 import Post from "@/backend/models/post";
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
+import cloudinary from "@/backend/lib/cloudinary";
+import { getCloudinaryPublicId } from "@/backend/lib/cloudinary/get-public-id";
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  await Connect();
 
   const { userId } = await getAuthUser();
   const { postId } = await request.json();
+
+
 
   if (
     typeof postId !== "string" ||
@@ -25,7 +28,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       { status: 400 }
     );
   }
-
+  await Connect();
   const session = await mongoose.startSession();
 
   try {
@@ -52,9 +55,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           { session }
         ),
       ]);
-
+      const publicId = getCloudinaryPublicId(post.postUrl);
       deleted = true;
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: post.postType === "video" ? "video" : "image",
+      });
     });
+
 
     if (!deleted) {
       return NextResponse.json(

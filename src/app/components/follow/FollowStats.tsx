@@ -4,7 +4,7 @@
 import { useState } from "react";
 
 import FollowListModal from "@/app/components/follow/FollowListModal";
-import type { FollowListType } from "@/app/hooks/useFollowList";
+import type { FollowListType } from "@/app/hooks/follow/useFollowList";
 
 interface FollowStatsProps {
   username: string;

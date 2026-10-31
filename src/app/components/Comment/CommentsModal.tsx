@@ -27,6 +27,7 @@ import {
   formatCount,
   formatDate,
 } from "@/backend/lib/post-card-utils";
+import { useRealtime } from "@/app/providers/RealtimeProvider";
 
 type CommentItem = CommentWithAuthor & {
   repliesCount?: number;
@@ -88,8 +89,6 @@ function CommentsModalComponent({
 
   useEffect(() => {
     if (!open) return;
-
-    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -99,7 +98,7 @@ function CommentsModalComponent({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = "";
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose]);
@@ -302,7 +301,6 @@ function CommentsModalComponent({
     </div>
   );
 }
-
 interface ThreadProps {
   postId: string;
   item: CommentItem;
@@ -337,6 +335,30 @@ function CommentThreadComponent({
 
   const requestInFlight = useRef(false);
   const hasFetchedReplies = useRef(false);
+  const seenReplyIdsRef = useRef(new Set<string>());
+  const { subscribeToPost } = useRealtime();
+
+  const addReplyOnce = useCallback((reply: ReplyItem) => {
+    if (seenReplyIdsRef.current.has(reply._id)) return;
+
+    seenReplyIdsRef.current.add(reply._id);
+
+    setReplies((previous) => [
+      reply,
+      ...previous.filter((existing) => existing._id !== reply._id),
+    ]);
+
+    setReplyCount((count) => count + 1);
+  }, []);
+
+  useEffect(() => {
+    return subscribeToPost(postId, "new-reply", ({ reply }) => {
+      // A post channel carries replies for every root comment on that post.
+      if (reply.parentCommentId !== item._id) return;
+
+      addReplyOnce(reply as ReplyItem);
+    });
+  }, [postId, item._id, subscribeToPost, addReplyOnce]);
 
   const fetchReplies = useCallback(
     async (nextCursor: string | null) => {
@@ -370,18 +392,20 @@ function CommentThreadComponent({
         const fetched = data.replies as ReplyItem[];
 
         setReplies((previous) => {
-          if (!nextCursor) return fetched;
-
-          const seen = new Set(
-            previous.map((reply) => reply._id)
+          // Keep replies that arrived through Pusher while this request
+          // was in flight, then merge fetched replies without duplicates.
+          const merged = [...previous, ...fetched];
+          const uniqueReplies = Array.from(
+            new Map(
+              merged.map((reply) => [reply._id, reply])
+            ).values()
           );
 
-          return [
-            ...previous,
-            ...fetched.filter(
-              (reply) => !seen.has(reply._id)
-            ),
-          ];
+          uniqueReplies.forEach((reply) => {
+            seenReplyIdsRef.current.add(reply._id);
+          });
+
+          return uniqueReplies;
         });
 
         hasFetchedReplies.current = true;
@@ -444,7 +468,7 @@ function CommentThreadComponent({
           }
         } else {
           // Refresh the parent-owned comments list.
-          onCommentDeleted(commentId, false)
+          onCommentDeleted(commentId, false);
         }
       } catch (error) {
         setDeleteError(
@@ -524,15 +548,9 @@ function CommentThreadComponent({
 
         const newReply = data.reply as ReplyItem;
 
-        setReplies((previous) => [
-          newReply,
-          ...previous.filter(
-            (reply) => reply._id !== newReply._id
-          ),
-        ]);
+        addReplyOnce(newReply);
 
         hasFetchedReplies.current = true;
-        setReplyCount((count) => count + 1);
         setExpanded(true);
         setReplyingTo(null);
         setReplyText("");
@@ -550,7 +568,7 @@ function CommentThreadComponent({
         setSubmitting(false);
       }
     },
-    [item._id, postId, replyText, replyingTo, submitting]
+    [addReplyOnce, item._id, postId, replyText, replyingTo, submitting]
   );
 
   const canDeleteComment =

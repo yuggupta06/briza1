@@ -1,9 +1,10 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { useFollow } from "@/app/hooks/useFollow";
-import { useFollowStatus } from "@/app/hooks/useFollowStatus";
+import { useFollow } from "@/app/hooks/follow/useFollow";
+import { useFollowStatus } from "@/app/hooks/follow/useFollowStatus";
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 
 interface FollowButtonProps {
@@ -24,16 +25,19 @@ export default function FollowButton({
     isSelf,
     isLoading,
     error: statusError,
-    refreshStatus,
   } = useFollowStatus(targetUserId);
 
-  const { toggleFollow, isMutating, error } = useFollow(targetUserId);
+  const { toggleFollow, error } = useFollow(targetUserId);
   const { mutateCurrentUser } = useCurrentUser();
 
+  // Synchronous lock: prevents overlapping requests before React rerenders.
+  const requestInProgress = useRef(false);
+
   const [isFollowing, setIsFollowing] = useState<boolean | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && !requestInProgress.current) {
       setIsFollowing(initialFollowing);
     }
   }, [initialFollowing, isLoading]);
@@ -41,19 +45,32 @@ export default function FollowButton({
   if (isSelf) return null;
 
   const handleClick = async () => {
-    if (isLoading || isMutating || isFollowing === null) return;
+    if (
+      requestInProgress.current ||
+      isLoading ||
+      isFollowing === null
+    ) {
+      return;
+    }
+
+    requestInProgress.current = true;
 
     const previous = isFollowing;
+
+    // Optimistic UI: change the label immediately.
     setIsFollowing(!previous);
+    setIsPending(true);
 
     try {
       const result = await toggleFollow();
 
       if (!result) {
+        // The request did not succeed; restore the original state.
         setIsFollowing(previous);
         return;
       }
 
+      // Trust the server's confirmed result.
       setIsFollowing(result.isFollowing);
 
       onFollowChange?.({
@@ -85,8 +102,11 @@ export default function FollowButton({
         );
       }
     } catch {
+      // Roll back if the API request fails.
       setIsFollowing(previous);
-      await refreshStatus();
+    } finally {
+      setIsPending(false);
+      requestInProgress.current = false;
     }
   };
 
@@ -107,19 +127,15 @@ export default function FollowButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={isMutating}
+        disabled={isPending}
         aria-pressed={isFollowing}
-        className={`rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200 disabled:opacity-60 ${
+        className={`rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200 disabled:opacity-60 cursor-pointer ${
           isFollowing
             ? "border border-neutral-300 bg-transparent text-current"
             : "bg-black text-white dark:bg-white dark:text-black"
         }`}
       >
-        {isMutating
-          ? "Please wait..."
-          : isFollowing
-            ? "Following"
-            : "Follow"}
+        {isFollowing ? "Following" : "Follow"}
       </button>
 
       {(error || statusError) && (

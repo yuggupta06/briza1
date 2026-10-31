@@ -1,10 +1,9 @@
-
 "use client";
 
-import { memo } from "react";
 import type { PostCardProps } from "@/types/post";
-import ProfilePostThumbnail from "./ProfilePostThumbnail";
-import FeedPostCard from "./FeedPostCard";
+import { memo } from "react";
+import FeedPostCard from "./FeedPostCard/FeedPostCard";
+import ProfilePostThumbnail from "./ProfilePostCard/ProfilePostThumbnail";
 
 function PostCardComponent({
   post,
@@ -28,7 +27,6 @@ const PostCard = memo(PostCardComponent);
 export default PostCard;
 
 export type {
- PostType,
   PostCardProps,
-  PostCardVariant,
+  PostCardVariant, PostType
 } from "@/types/post";

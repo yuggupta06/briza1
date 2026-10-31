@@ -1,12 +1,12 @@
 
 "use client";
 
-import { useEffect } from "react";
 import { LoaderCircle, X } from "lucide-react";
+import { useEffect } from "react";
 
-import { useFollowList } from "@/app/hooks/useFollowList";
-import type { FollowListType } from "@/app/hooks/useFollowList";
 import FollowUserItem from "@/app/components/follow/FollowUserItem";
+import type { FollowListType } from "@/app/hooks/follow/useFollowList";
+import { useFollowList } from "@/app/hooks/follow/useFollowList";
 
 interface FollowListModalProps {
   username: string;

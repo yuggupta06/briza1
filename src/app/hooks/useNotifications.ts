@@ -1,26 +1,20 @@
 
 "use client";
 
-import { useCallback, useEffect } from "react";
-import useSWRInfinite from "swr/infinite";
+import { useRealtimeEvent } from "@/app/hooks/useRealtimeEvent";
+import { NotificationType } from "@/types/notification";
 import axios from "axios";
-import { io } from "socket.io-client";
+import { useCallback } from "react";
+import useSWRInfinite from "swr/infinite";
 
-export type BrizaNotification = {
-  _id: string;
-  actor: {
-    _id: string;
-    username: string;
-    imageUrl?: string;
-  };
-  type: "follow";
-  read: boolean;
-  createdAt: string;
+
+type NotificationEvent = {
+  notification: NotificationType;
 };
 
 type NotificationsPage = {
   success: boolean;
-  notifications: BrizaNotification[];
+  notifications: NotificationType[];
   unreadCount: number;
   pagination: {
     hasMore: boolean;
@@ -28,7 +22,7 @@ type NotificationsPage = {
   };
 };
 
-const API_URL = "/api/notifications";
+const API_URL = "/api/notifications/fetch-notifications";
 
 const fetcher = async (
   url: string
@@ -38,6 +32,7 @@ const fetcher = async (
 };
 
 export function useNotifications() {
+  // const {mutateCurrentUser,currentUser} =useCurrentUser
   const getKey = useCallback(
     (
       pageIndex: number,
@@ -70,54 +65,78 @@ export function useNotifications() {
     size,
     setSize,
     mutate,
-  } = useSWRInfinite<NotificationsPage>(getKey, fetcher);
+  } = useSWRInfinite<NotificationsPage>(getKey, fetcher, {
+    revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  revalidateIfStale: true,
+  revalidateOnMount: true,
+  revalidateFirstPage: true,
+  persistSize: true,
+  });
 
-  // Real-time notifications
-  useEffect(() => {
-    const socket = io({
-      withCredentials: true,
-    });
+  // Receive new notifications through the shared realtime provider.
+  const handleNewNotification = useCallback(
+    (event: NotificationEvent) => {
+      const notification = event?.notification;
+      if (!notification?._id) return;
+      
+    //    if (notification.type === "follow") {
+    //   void mutateCurrentUser(
+    //     (currentData) => {
+    //       if (!currentUser) return currentUser;
 
-    socket.on(
-      "notification:new",
-      (notification: BrizaNotification) => {
-        void mutate(
-          (pages) => {
-            if (!pages?.length) return pages;
+    //       return {
+    //         ...currentData,
+    //         user: {
+    //           ...currentUser,
+    //           followers: currentUser.followers + 1,
+    //         },
+    //       };
+    //     },
+    //     { revalidate: false }
+    //   );
+    // }
 
-            // Prevent duplicate notifications across all loaded pages.
-            const alreadyExists = pages.some((page) =>
-              page.notifications.some(
-                (item) => item._id === notification._id
-              )
-            );
+      void mutate(
+        (pages) => {
+          if (!pages?.length) return pages;
 
-            if (alreadyExists) return pages;
+          // Prevent duplicates across every loaded page.
+          const alreadyExists = pages.some((page) =>
+            page.notifications.some(
+              (item) => item._id === notification._id
+            )
+          );
 
-            return pages.map((page, index) => {
-              if (index !== 0) return page;
+          if (alreadyExists) return pages;
 
-              return {
-                ...page,
-                notifications: [
-                  notification,
-                  ...page.notifications,
-                ].slice(0, 30),
-                unreadCount: page.unreadCount + 1,
-              };
-            });
-          },
-          { revalidate: false }
-        );
-      }
-    );
+          return pages.map((page, index) => {
+            if (index !== 0) return page;
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [mutate]);
+            return {
+              ...page,
+              notifications: [
+                notification,
+                ...page.notifications,
+              ].slice(0, 30),
+              unreadCount: notification.read
+                ? page.unreadCount
+                : page.unreadCount + 1,
+            };
+          });
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
 
-  // Combine all loaded pages and deduplicate by notification ID.
+  useRealtimeEvent(
+    "new-notification",
+    handleNewNotification
+  );
+
+  // Flatten loaded pages and deduplicate notifications by ID.
   const notifications = Array.from(
     new Map(
       (data ?? [])
@@ -129,14 +148,115 @@ export function useNotifications() {
     ).values()
   );
 
+  // Mark a notification as read.
+  const markAsRead = useCallback(
+    async (notificationId: string) => {
+      const previousPages = data;
+
+      if (!previousPages) return;
+
+      const notification = previousPages
+        .flatMap((page) => page.notifications)
+        .find((item) => item._id === notificationId);
+
+      if (!notification || notification.read) return;
+
+      // Optimistically update the cache.
+      await mutate(
+        (pages) => {
+          if (!pages) return pages;
+
+          return pages.map((page, index) => ({
+            ...page,
+            notifications: page.notifications.map((item) =>
+              item._id === notificationId
+                ? { ...item, read: true }
+                : item
+            ),
+
+            // unreadCount is maintained on the first page.
+            unreadCount:
+              index === 0
+                ? Math.max(0, page.unreadCount - 1)
+                : page.unreadCount,
+          }));
+        },
+        { revalidate: false }
+      );
+
+      try {
+        await axios.patch("/api/notifications/mark-read", {
+          notificationId,
+        });
+      } catch (error) {
+        // Roll back if the server request fails.
+        await mutate(previousPages, {
+          revalidate: false,
+        });
+
+        throw error;
+      }
+    },
+    [data, mutate]
+  );
+
+  // Delete a notification.
+  const deleteNotification = useCallback(
+    async (notificationId: string) => {
+      const previousPages = data;
+
+      if (!previousPages) return;
+
+      const notification = previousPages
+        .flatMap((page) => page.notifications)
+        .find((item) => item._id === notificationId);
+
+      if (!notification) return;
+
+      // Optimistically remove the notification.
+      await mutate(
+        (pages) => {
+          if (!pages) return pages;
+
+          return pages.map((page, index) => ({
+            ...page,
+            notifications: page.notifications.filter(
+              (item) => item._id !== notificationId
+            ),
+            unreadCount:
+              index === 0 && !notification.read
+                ? Math.max(0, page.unreadCount - 1)
+                : page.unreadCount,
+          }));
+        },
+        { revalidate: false }
+      );
+
+      try {
+        await axios.delete(
+          "/api/notifications/delete-notification",
+          {
+            data: { notificationId },
+          }
+        );
+      } catch (error) {
+        // Restore the previous cache if deletion fails.
+        await mutate(previousPages, {
+          revalidate: false,
+        });
+
+        throw error;
+      }
+    },
+    [data, mutate]
+  );
+
   const firstPage = data?.[0];
   const lastPage = data?.[data.length - 1];
 
-  const hasMore =
-    lastPage?.pagination.hasMore ?? false;
+  const hasMore = lastPage?.pagination.hasMore ?? false;
 
-  const isLoadingMore =
-    isValidating && size > 1;
+  const isLoadingMore = isValidating && size > 1;
 
   const loadMore = useCallback(() => {
     if (
@@ -160,5 +280,7 @@ export function useNotifications() {
     isLoadingMore,
     error,
     mutate,
+    markAsRead,
+    deleteNotification,
   };
 }

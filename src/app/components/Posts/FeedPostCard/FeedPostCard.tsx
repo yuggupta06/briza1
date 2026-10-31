@@ -2,42 +2,41 @@
 "use client";
 
 import {
+  Bookmark,
+  Heart,
+  MessageCircle,
+  Share2,
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import {
   memo,
   useCallback,
   useEffect,
   useState,
 } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import {
-  Bookmark,
-  Heart,
-  MessageCircle,
-  MoreHorizontal,
-  Share2,
-} from "lucide-react";
 
-import { usePostInteractions } from "@/app/hooks/use-post-interactions";
+import { usePostInteractions } from "@/app/hooks/posts/use-post-interactions";
+import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
-import { useSharePost } from "@/app/hooks/use-share-post";
 import { usePauseVideoWhenOutOfView } from "@/app/hooks/usePauseVideoWhenOutOfView";
+import { useRealtime } from "@/app/providers/RealtimeProvider";
 
+import CommentsModalComponent from "@/app/components/Comment/CommentsModal";
 import type { PostType } from "@/types/post";
-import CommentsModalComponent from "./CommentsModal";
 
 import {
   FALLBACK_AVATAR,
   formatCount,
   formatDate,
 } from "@/backend/lib/post-card-utils";
-
-
+import PostTimestamp from "../PostTimestamp";
+import PostActionMenu from "./PostActionMenu";
 
 function FeedPostCard({ post }: { post: PostType }) {
   const [saved, setSaved] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
-  // custom hooks 
   const {
     liked,
     likeCount,
@@ -55,6 +54,7 @@ function FeedPostCard({ post }: { post: PostType }) {
     setCommentText,
     setSubmitError,
     fetchComments,
+    handleNewComment,
     loadMoreComments,
     submitComment,
     handleLike,
@@ -69,39 +69,45 @@ function FeedPostCard({ post }: { post: PostType }) {
     isLiking,
     handleLike,
   });
+
   const sharePost = useSharePost({
-  postId: post._id,
-  username: post.author.username,
+    postId: post._id,
+    username: post.author.username,
   });
 
-  const videoRef = usePauseVideoWhenOutOfView(post.postUrl); 
+  const videoRef = usePauseVideoWhenOutOfView(post.postUrl);
+  const { subscribeToPost } = useRealtime();
 
-    // Open and close
+  // Keep the post subscription active even while the comments modal is closed.
+  useEffect(() => {
+    if (!post._id) return;
+
+    return subscribeToPost(post._id, "new-comment", ({ comment }) => {
+      handleNewComment(comment);
+    });
+  }, [post._id, subscribeToPost, handleNewComment]);
+
   const openComments = useCallback(() => {
     if (commentsOpen) return;
 
     setCommentsOpen(true);
 
-    if (comments.length === 0) {
-      void fetchComments(null);
-    }
-  }, [commentsOpen, comments.length, fetchComments]);
+    // Always refresh the first page when opening. This catches comments
+    // created while this card was not receiving realtime events (e.g. offline).
+    void fetchComments(null);
+  }, [commentsOpen, fetchComments]);
+
   const closeComments = useCallback(() => {
     setCommentsOpen(false);
     setSubmitError("");
   }, [setSubmitError]);
 
-  
-
-  // Lock background scrolling while comments are open.
   useEffect(() => {
     if (!commentsOpen) return;
     document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeComments();
-      }
+      if (event.key === "Escape") closeComments();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -112,17 +118,15 @@ function FeedPostCard({ post }: { post: PostType }) {
     };
   }, [commentsOpen, closeComments]);
 
-
-
   return (
     <>
-      <article className="w-full min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white">
+      <article className="w-full min-w-0 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 text-white py-3">
         <div className="flex items-center justify-between px-4 py-3">
-          <Link
-            href={`/profile/${post.author.username}`}
-            className="flex min-w-0 cursor-pointer items-center gap-3"
-          >
-            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href={`/profile/${post.author.username}`}
+              className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full bg-neutral-800"
+            >
               <Image
                 src={post.author.imageUrl || FALLBACK_AVATAR}
                 alt={`${post.author.username}'s avatar`}
@@ -131,28 +135,31 @@ function FeedPostCard({ post }: { post: PostType }) {
                 className="object-cover"
                 unoptimized
               />
-            </div>
+            </Link>
 
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">
+              <Link
+                href={`/profile/${post.author.username}`}
+                className="block truncate text-sm font-semibold hover:underline"
+              >
                 {post.author.username}
-              </p>
+              </Link>
 
               {post.createdAt && (
-                <p className="text-xs text-neutral-500">
-                  {formatDate(post.createdAt)}
-                </p>
+                <PostTimestamp
+                  createdAt={post.createdAt}
+                  displayText={formatDate(post.createdAt)}
+                />
               )}
             </div>
-          </Link>
+          </div>
 
-          <button
-            type="button"
-            aria-label="More post options"
-            className="rounded-full p-2 text-neutral-400 hover:bg-neutral-800 hover:text-white"
-          >
-            <MoreHorizontal size={20} />
-          </button>
+          <PostActionMenu
+            postId={post._id}
+            saved={saved}
+            onToggleSave={() => setSaved((value) => !value)}
+            isOwner={false}
+          />
         </div>
 
         {post.postType === "image" && post.postUrl && (
@@ -187,7 +194,7 @@ function FeedPostCard({ post }: { post: PostType }) {
             onDoubleClick={handleImageDoubleClick}
           >
             <video
-            ref={videoRef}
+              ref={videoRef}
               src={post.postUrl}
               controls
               playsInline
@@ -223,17 +230,15 @@ function FeedPostCard({ post }: { post: PostType }) {
               disabled={isLiking}
               aria-label={liked ? "Unlike post" : "Like post"}
               aria-pressed={liked}
-              className={`flex cursor-pointer items-center gap-2 transition ${
-                liked
-                  ? "text-rose-500"
-                  : "text-neutral-300 hover:text-rose-500"
-              } disabled:cursor-wait disabled:opacity-70`}
+              className={`flex cursor-pointer items-center gap-2 transition ${liked
+                ? "text-rose-500"
+                : "text-neutral-300 hover:text-rose-500"
+                } disabled:cursor-wait disabled:opacity-70`}
             >
               <Heart
                 size={23}
                 fill={liked ? "currentColor" : "none"}
               />
-
               <span className="text-sm font-medium">
                 {formatCount(likeCount)}
               </span>
@@ -246,7 +251,6 @@ function FeedPostCard({ post }: { post: PostType }) {
               className="flex cursor-pointer items-center gap-2 text-neutral-300 transition hover:text-white"
             >
               <MessageCircle size={23} />
-
               <span className="text-sm font-medium">
                 {formatCount(commentCount)}
               </span>

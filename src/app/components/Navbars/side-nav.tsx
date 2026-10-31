@@ -13,7 +13,6 @@ import { Icon } from "../ui/briza-icon";
 
 export function SideNav() {
   const pathname = usePathname();
-  const isProfileActive = pathname === "/profile";
   const { currentUser, isLoading } = useCurrentUser();
 
   const isActive = (href: string) => {

@@ -61,22 +61,22 @@ export default function ImagesFeed() {
     setSize,
     mutate: mutateFeed,
   } = useSWRInfinite<FeedResponse>(getKey, fetchFeedPage, {
-  initialSize: 1,
-  persistSize: true,
+    initialSize: 1,
+    persistSize: true,
 
-  refreshInterval: 60_000,
-  revalidateAll: false,
-  revalidateFirstPage: true,
+    refreshInterval: 60_000,
+    revalidateAll: false,
+    revalidateFirstPage: false,
 
-  revalidateOnFocus: false,
-  revalidateOnReconnect: false,
-  revalidateIfStale: false,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
 
-  refreshWhenHidden: false,
-  refreshWhenOffline: false,
+    refreshWhenHidden: false,
+    refreshWhenOffline: false,
 
-  dedupingInterval: 2_000,
-});
+    dedupingInterval: 2_000,
+  });
 
   // Combine the cached pages into one array for rendering.
   const posts = useMemo(() => {
@@ -166,14 +166,17 @@ export default function ImagesFeed() {
 
   return (
     <section
+     data-feed-container
       aria-label="Posts feed"
       className="flex w-full flex-col gap-8"
     >
       {posts.map((post) => (
-        <PostCard
+        <div
           key={post._id}
-          post={post}
-        />
+          data-post-id={post._id}
+        >
+          <PostCard post={post} />
+        </div>
       ))}
 
       {/* Infinite-scroll loading target */}

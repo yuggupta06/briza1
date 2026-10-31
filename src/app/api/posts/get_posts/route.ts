@@ -111,7 +111,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     .sort({ createdAt: -1, _id: -1 })
     .limit(PAGE_SIZE + 1)
     .lean();
-
   const hasMore = fetchedPosts.length > PAGE_SIZE;
   const page = hasMore ? fetchedPosts.slice(0, PAGE_SIZE) : fetchedPosts;
 

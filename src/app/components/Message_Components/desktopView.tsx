@@ -1,12 +1,11 @@
 "use client"
-// import { ChatMessage, UserType } from "@/types/types";
+import type { ChatMessage, ChatProps } from "@/types/types";
 import { Plus, Search, Phone, Video, Info, Send, Smile, Heart } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef } from "react";
-// import { ChatProps } from "@/types/types";
 
 
-export default function DesktopView({ allUsers, selectedUser, message, setMessage, setSelectedUser, handleSendMessage, messages, setMessages, handleUserClick, profileName }: ChatProps) {
+export default function DesktopView({ allUsers, selectedUser, message, setMessage, handleSendMessage, messages, profileName }: ChatProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef=useRef<HTMLInputElement>(null)
     useEffect(()=>{
@@ -14,7 +13,7 @@ export default function DesktopView({ allUsers, selectedUser, message, setMessag
             inputRef.current.focus();
         }
         setMessage('')
-    },[selectedUser])
+    }, [selectedUser, setMessage])
 
     useEffect(() => {
         // Scroll to bottom whenever messages change
@@ -257,5 +256,4 @@ export default function DesktopView({ allUsers, selectedUser, message, setMessag
     )
 
 };
-
 

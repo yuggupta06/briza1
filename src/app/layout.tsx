@@ -6,6 +6,8 @@ import './globals.css'
 
 import { MobileNav } from '@/app/components/Navbars/mobile-nav'
 import { SideNav } from '@/app/components/Navbars/side-nav'
+import { BrizaRealtimeProvider } from './providers/BrizaRealtimeProvider'
+import RealtimeNotificationToast from './components/Notifications/RealtimeNotificationToast'
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -46,6 +48,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'dark',
   themeColor: '#111318',
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+
 }
 
 export default function RootLayout({
@@ -69,14 +76,15 @@ export default function RootLayout({
         />
       </head>
 
-      <body className="min-h-screen antialiased selection:bg-primary-container selection:text-on-primary-container">
+      <body className="min-h-screen antialiased selection:bg-primary-container selection:text-on-primary-container overflow-x-hidden">
         <div className="flex min-h-screen w-full justify-center">
           <SideNav />
 
           <div className="flex w-full justify-center md:pl-64">
+          <BrizaRealtimeProvider>
+          <RealtimeNotificationToast />
             {children}
-
-            {/* <DiscoverySidebar /> */}
+          </BrizaRealtimeProvider>
           </div>
 
           <MobileNav />

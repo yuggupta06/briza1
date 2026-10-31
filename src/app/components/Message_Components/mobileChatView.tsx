@@ -1,11 +1,10 @@
 "use client"
 
-import { ChatMessage, UserType } from '@/types/types';
-import { Search, MoreHorizontal, Phone, Video, Info, Send, Heart, Smile, ArrowLeft, Plus, Camera } from 'lucide-react';
-import { ChatProps } from '@/types/types';
+import type { ChatMessage, ChatProps } from "@/types/types";
+import { Phone, Video, Send, Smile, ArrowLeft, Camera } from "lucide-react";
 import { useEffect, useRef } from 'react';
 
-export default function MobileChatView({ allUsers, selectedUser, message, setMessage, setSelectedUser, handleSendMessage, messages, setMessages, handleUserClick, profileName, handleBackClick }: ChatProps) {
+export default function MobileChatView({ selectedUser, message, setMessage, handleSendMessage, messages, profileName, handleBackClick }: ChatProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -15,7 +14,7 @@ export default function MobileChatView({ allUsers, selectedUser, message, setMes
             inputRef.current.focus();
         }
         setMessage('')
-    }, [selectedUser])
+    }, [selectedUser, setMessage])
 
     useEffect(() => {
         // Smooth scroll to bottom whenever messages change

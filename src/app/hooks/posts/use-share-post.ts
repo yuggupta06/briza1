@@ -16,7 +16,9 @@ export function useSharePost({
   onShareError,
 }: UseSharePostOptions) {
   const sharePost = useCallback(async () => {
-    const url = `${window.location.origin}/post/${postId}`;
+    const url = `${window.location.origin}/profile/${encodeURIComponent(
+      username
+    )}?post=${encodeURIComponent(postId)}`;
 
     try {
       if (navigator.share) {
@@ -29,7 +31,7 @@ export function useSharePost({
         onLinkCopied?.();
       }
     } catch (error) {
-      // Closing the native share dialog isn't an actual error.
+      // Closing the native share dialog is not an actual error.
       if (
         error instanceof Error &&
         error.name === "AbortError"

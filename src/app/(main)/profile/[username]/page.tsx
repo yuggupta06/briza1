@@ -1,7 +1,6 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter,useSearchParams } from "next/navigation";
 import { LoaderCircle, UserRoundX } from "lucide-react";
 import axios from "axios";
 
@@ -13,6 +12,8 @@ export default function PublicProfilePage() {
   const params = useParams<{ username: string }>();
   const username = params.username;
   const router = useRouter();
+  const searchParams = useSearchParams();
+const postId = searchParams.get("post");
 
   const {
     currentUser,
@@ -30,9 +31,13 @@ export default function PublicProfilePage() {
     if (!username || isCurrentUserLoading) return;
 
     if (currentUsername && currentUsername === username.toLowerCase()) {
-      router.replace("/profile");
-      return;
-    }
+  router.replace(
+    postId
+      ? `/profile?post=${encodeURIComponent(postId)}`
+      : "/profile"
+  );
+  return;
+}
 
     const controller = new AbortController();
 
@@ -70,13 +75,7 @@ export default function PublicProfilePage() {
     void loadProfile();
 
     return () => controller.abort();
-  }, [
-    username,
-    currentUsername,
-    isCurrentUserLoading,
-    router,
-    retryCount,
-  ]);
+  }, [username, currentUsername, isCurrentUserLoading, router, retryCount, postId]);
 
   if (loading || isCurrentUserLoading) {
     return (

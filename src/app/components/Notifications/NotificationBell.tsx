@@ -9,8 +9,10 @@ import {
 } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, Check, Clock3, X } from "lucide-react";
-import { useNotifications } from "@/app/hooks/useNotifications";
+import { Bell, Check, Clock3, X,Trash2 } from "lucide-react";
+import {  useNotifications } from "@/app/hooks/useNotifications";
+import { NotificationType } from "@/types/notification";
+import { formatDate } from "@/backend/lib/post-card-utils";
 
 type Tab = "all" | "unread";
 
@@ -20,7 +22,23 @@ export default function NotificationBell() {
 
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
+const handleDeleteNotification = async (
+  notificationId: string
+) => {
+  if (deletingId) return;
+
+  setDeletingId(notificationId);
+
+  try {
+    await deleteNotification(notificationId);
+  } catch (error) {
+    console.error("Failed to delete notification:", error);
+  } finally {
+    setDeletingId(null);
+  }
+};
   const {
     notifications,
     unreadCount,
@@ -29,11 +47,22 @@ export default function NotificationBell() {
     hasMore,
     loadMore,
     error,
+    markAsRead,
+    deleteNotification
   } = useNotifications();
 
   const closeDrawer = useCallback(() => {
     setIsOpen(false);
   }, []);
+  const handleNotificationClick = async (
+  notification: NotificationType
+) => {
+  if (!notification.read) {
+    await markAsRead(notification._id);
+  }
+
+  closeDrawer();
+};
 
   // Lock background scrolling while the drawer is open.
   useEffect(() => {
@@ -97,28 +126,6 @@ export default function NotificationBell() {
     (notification) =>
       activeTab === "all" || !notification.read
   );
-
-  const formatTime = (date: string) => {
-    const timestamp = new Date(date).getTime();
-
-    if (!Number.isFinite(timestamp)) return "";
-
-    const minutes = Math.max(
-      0,
-      Math.floor((Date.now() - timestamp) / 60000)
-    );
-
-    if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes}m ago`;
-
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
-
-    return new Date(date).toLocaleDateString();
-  };
 
   return (
     <>
@@ -336,78 +343,109 @@ export default function NotificationBell() {
                 </div>
               ) : (
                 <div className="py-2">
-                  {visibleNotifications.map((notification) => (
-                    <Link
-                      key={notification._id}
-                      href={`/profile/${notification.actor.username}`}
-                      onClick={closeDrawer}
-                      className={`group flex gap-3 px-5 py-4 transition
-                        hover:bg-gray-50 dark:hover:bg-white/[0.04]
-                        sm:px-6 ${
-                          !notification.read
-                            ? "bg-blue-50/70 dark:bg-blue-500/[0.07]"
-                            : ""
-                        }`}
-                    >
-                      {notification.actor.imageUrl ? (
-                        <Image
-                          src={notification.actor.imageUrl}
-                          alt={notification.actor.username}
-                          width={44}
-                          height={44}
-                          unoptimized
-                          className="h-11 w-11 shrink-0 rounded-full
-                            border border-gray-100 object-cover
-                            dark:border-white/10"
-                        />
-                      ) : (
-                        <div
-                          className="flex h-11 w-11 shrink-0 items-center
-                            justify-center rounded-full bg-blue-100
-                            text-sm font-semibold text-blue-700
-                            dark:bg-blue-500/20 dark:text-blue-300"
-                        >
-                          {notification.actor.username
-                            .slice(0, 1)
-                            .toUpperCase()}
-                        </div>
-                      )}
+                  
+{visibleNotifications.map((notification: NotificationType) => (
+  <div
+    key={notification._id}
+    className="group flex items-center gap-1 transition
+      hover:bg-gray-50 dark:hover:bg-white/[0.04]"
+  >
+  
+<Link
+  href={
+    notification.type === "follow"
+      ? `/profile/${notification.actor.username}`
+      : notification.post
+        ? notification.type === "comment" && notification.comment
+          ? `/profile?post=${notification.post}`
+          : `/profile?post=${notification.post}`
+        : `/profile/${notification.actor.username}`
+  }
+  onClick={() => {
+    void handleNotificationClick(notification);
+  }}
+  className={`flex min-w-0 flex-1 gap-3 px-5 py-4 sm:px-6 ${
+    !notification.read
+      ? "bg-blue-50/70 dark:bg-blue-500/[0.07]"
+      : ""
+  }`}
+>
+  {notification.actor.imageUrl ? (
+    <Image
+      src={notification.actor.imageUrl}
+      alt={notification.actor.username}
+      width={44}
+      height={44}
+      unoptimized
+      className="h-11 w-11 shrink-0 rounded-full border border-gray-100 object-cover dark:border-white/10"
+    />
+  ) : (
+    <div
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+    >
+      {notification.actor.username.slice(0, 1).toUpperCase()}
+    </div>
+  )}
 
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <p
-                          className="text-[13px] leading-5
-                            text-gray-700 dark:text-gray-200"
-                        >
-                          <span
-                            className="font-semibold text-gray-900
-                              dark:text-white"
-                          >
-                            {notification.actor.username}
-                          </span>{" "}
+  <div className="min-w-0 flex-1 pt-0.5">
+    <p className="text-[13px] leading-5 text-gray-700 dark:text-gray-200">
+      <span className="font-semibold text-gray-900 dark:text-white">
+        {notification.actor.username}
+      </span>{" "}
 
-                          {notification.type === "follow"
-                            ? "started following you."
-                            : "interacted with you."}
-                        </p>
+      {notification.type === "follow"
+        ? "started following you."
+        : notification.type === "like"
+          ? "liked your post."
+          : notification.type === "comment"
+            ? "commented on your post."
+            : "interacted with you."}
+    </p>
 
-                        <p
-                          className="mt-1 flex items-center gap-1.5
-                            text-xs text-gray-500 dark:text-gray-400"
-                        >
-                          <Clock3 size={12} />
-                          {formatTime(notification.createdAt)}
-                        </p>
-                      </div>
+    <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+      <Clock3 size={12} />
+      {formatDate(notification.createdAt)}
+    </p>
+  </div>
 
-                      {!notification.read && (
-                        <span
-                          aria-label="Unread"
-                          className="mt-2 h-2 w-2 shrink-0 rounded-full
-                            bg-blue-600"
-                        />
-                      )}
-                    </Link>
-                  ))}
+  {!notification.read && (
+    <span
+      aria-label="Unread"
+      className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+    />
+  )}
+</Link>
+
+
+    <button
+      type="button"
+      aria-label={`Delete notification from ${notification.actor.username}`}
+      title="Delete notification"
+      disabled={deletingId !== null}
+      onClick={() => {
+        void handleDeleteNotification(notification._id);
+      }}
+      className="mr-3 flex h-9 w-9 shrink-0 items-center
+        justify-center rounded-full text-gray-400
+        opacity-100 transition
+        hover:bg-red-50 hover:text-red-600
+        dark:hover:bg-red-500/10 dark:hover:text-red-400
+        disabled:cursor-not-allowed disabled:opacity-40
+        sm:mr-4 sm:opacity-0 sm:group-hover:opacity-100
+        sm:focus-visible:opacity-100"
+    >
+      {deletingId === notification._id ? (
+        <span
+          className="h-4 w-4 animate-spin rounded-full
+            border-2 border-current border-t-transparent"
+        />
+      ) : (
+        <Trash2 size={17} />
+      )}
+    </button>
+  </div>
+))}
+
                 </div>
               )}
 

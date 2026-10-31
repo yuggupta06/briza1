@@ -99,6 +99,9 @@ export function usePostInteractions({
   );
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
+  const commentsRef = useRef<CommentWithAuthor[]>([]);
+  const commentIdsRef = useRef<Set<string>>(new Set());
+  const countedCommentIdsRef = useRef<Set<string>>(new Set());
   const [commentText, setCommentText] = useState("");
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -137,6 +140,11 @@ export function usePostInteractions({
     [onCountsChange]
   );
 
+  // Keep a ref to the latest comments for stable async callbacks.
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
+
   // Reset comment state only when the selected post changes.
   // Count updates must not clear comments or restart their loading state.
   useEffect(() => {
@@ -151,6 +159,9 @@ export function usePostInteractions({
   setCommentCount(commentCountRef.current);
 
   setComments([]);
+  commentsRef.current = [];
+  commentIdsRef.current.clear();
+  countedCommentIdsRef.current.clear();
   setCommentText("");
   setCommentsLoading(false);
   setIsLoadingMore(false);
@@ -185,9 +196,8 @@ export function usePostInteractions({
 
       if (cursor) {
         setIsLoadingMore(true);
-      } else {
-        // Only show the initial loading screen if there are no comments.
-        if (comments.length === 0) setCommentsLoading(true);
+      } else if (commentsRef.current.length === 0) {
+        setCommentsLoading(true);
       }
 
       try {
@@ -203,16 +213,31 @@ export function usePostInteractions({
         if (postIdRef.current !== id) return;
 
         const fetched = data.comments.map(normalizeComment);
+        for (const comment of fetched) {
+          if (comment._id) {
+            commentIdsRef.current.add(comment._id);
+            // A comment present in the server response is already reflected
+            // in the server-side count, so a delayed Pusher event for it must
+            // not increment the local count a second time.
+            countedCommentIdsRef.current.add(comment._id);
+          }
+        }
 
+        // Initial-page requests merge with already loaded pages so a refresh
+        // cannot discard older comments or a comment received while fetching.
         setComments((previous) => {
-          if (!cursor) return fetched;
-
           const existingIds = new Set(previous.map((item) => item._id));
+          const uniqueFetched = fetched.filter((item) => !existingIds.has(item._id));
 
-          return [
-            ...previous,
-            ...fetched.filter((item) => !existingIds.has(item._id)),
-          ];
+          const merged = cursor
+            ? [...previous, ...uniqueFetched]
+            : [
+                ...previous.filter((item) => !fetched.some((fresh) => fresh._id === item._id)),
+                ...fetched,
+              ];
+
+          commentsRef.current = merged;
+          return merged;
         });
 
         setHasMoreComments(data.hasMore);
@@ -231,7 +256,38 @@ export function usePostInteractions({
         }
       }
     },
-    [comments.length]
+    []
+  );
+
+  const handleNewComment = useCallback(
+    (value: unknown) => {
+      const comment = normalizeComment(value);
+      const id = postIdRef.current;
+
+      if (!id || !comment._id || (comment.post && comment.post !== id)) return;
+
+      // Keep list deduplication separate from count deduplication: a fetched
+      // comment may already be visible before its Pusher event arrives.
+      if (!commentIdsRef.current.has(comment._id)) {
+        commentIdsRef.current.add(comment._id);
+        setComments((previous) => {
+          if (previous.some((item) => item._id === comment._id)) return previous;
+          const next = [comment, ...previous];
+          commentsRef.current = next;
+          return next;
+        });
+      }
+
+      // HTTP response and Pusher can report the same newly-created comment.
+      if (countedCommentIdsRef.current.has(comment._id)) return;
+      countedCommentIdsRef.current.add(comment._id);
+
+      const nextCount = commentCountRef.current + 1;
+      commentCountRef.current = nextCount;
+      setCommentCount(nextCount);
+      publishCounts(likedRef.current, likeCountRef.current, nextCount, id);
+    },
+    [publishCounts]
   );
 
   const loadMoreComments = useCallback(async () => {
@@ -269,24 +325,8 @@ export function usePostInteractions({
         if (postIdRef.current !== id) return false;
 
         const newComment = normalizeComment(data.comment);
-
-        setComments((previous) => [
-          newComment,
-          ...previous.filter((item) => item._id !== newComment._id),
-        ]);
-
+        handleNewComment(newComment);
         setCommentText("");
-
-        const nextCount = commentCountRef.current + 1;
-        commentCountRef.current = nextCount;
-        setCommentCount(nextCount);
-
-        publishCounts(
-          likedRef.current,
-          likeCountRef.current,
-          nextCount,
-          id
-        );
 
         return true;
       } catch (error) {
@@ -304,7 +344,7 @@ export function usePostInteractions({
         setIsSubmittingComment(false);
       }
     },
-    [commentText, publishCounts]
+    [commentText, handleNewComment]
   );
 
   const handleLike = useCallback(async () => {
@@ -419,6 +459,7 @@ export function usePostInteractions({
     setCommentText,
     setSubmitError,
     fetchComments,
+    handleNewComment,
     loadMoreComments,
     submitComment,
     handleLike,

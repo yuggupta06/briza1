@@ -8,8 +8,8 @@ export type PostType = {
   postUrl: string;
   postType: "image" | "video" | "text";
   isLiked: boolean;
-  caption?: string;
-  createdAt?: string;
+  caption: string;
+  createdAt: string;
   likesCount: number;
   commentsCount: number;
 };

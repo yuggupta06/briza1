@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -6,7 +7,10 @@ import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 
 import Like from "@/backend/models/like";
+import Notification from "@/backend/models/notification";
 import Post from "@/backend/models/post";
+
+import { broadcastNotification } from "@/backend/lib/notifications/broadcastNotification";
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
   await Connect();
@@ -43,17 +47,23 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const postObjectId = new mongoose.Types.ObjectId(postId);
   const authorObjectId = new mongoose.Types.ObjectId(userId);
 
-  const postExists = await Post.exists({
+  // Fetch post and its author.
+  const post = (await Post.findOne({
     _id: postObjectId,
     deleted: { $ne: true },
-  });
+  })
+    .select("author")
+    .lean()) as { author?: mongoose.Types.ObjectId | null } | null;
 
-  if (!postExists) {
+  if (!post || !post.author) {
     return NextResponse.json(
       { success: false, message: "Post not found" },
       { status: 404 }
     );
   }
+
+  const postAuthor = post.author;
+  const recipientId = postAuthor.toString();
 
   const filter = {
     post: postObjectId,
@@ -68,12 +78,85 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         { upsert: true }
       );
 
-      // Increase the counter only when a new Like was inserted.
+      // Only process a newly created Like.
       if (result.upsertedCount === 1) {
         await Post.updateOne(
           { _id: postObjectId },
           { $inc: { likesCount: 1 } }
         );
+
+        // Don't notify users about their own likes.
+        if (recipientId !== userId.toString()) {
+          try {
+            const notificationFilter = {
+              recipient: postAuthor,
+              actor: authorObjectId,
+              type: "like",
+              post: postObjectId,
+            };
+
+            const notificationResult = await Notification.updateOne(
+              notificationFilter,
+              {
+                $setOnInsert: {
+                  recipient: postAuthor,
+                  actor: authorObjectId,
+                  type: "like",
+                  post: postObjectId,
+                  comment: null,
+                  read: false,
+                },
+              },
+              {
+                upsert: true,
+                setDefaultsOnInsert: true,
+              }
+            );
+
+            // Only broadcast if a new notification was inserted.
+            if (notificationResult.upsertedCount === 1) {
+              const notification = (await Notification.findById(
+                notificationResult.upsertedId
+              )
+                .populate("actor", "username imageUrl")
+                .lean()) as {
+                  _id: mongoose.Types.ObjectId;
+                  actor: {
+                    _id: mongoose.Types.ObjectId;
+                    username: string;
+                    imageUrl?: string | null;
+                  };
+                  post?: mongoose.Types.ObjectId | null;
+                  comment?: mongoose.Types.ObjectId | null;
+                  read: boolean;
+                  createdAt: Date;
+                } | null;
+
+              if (notification) {
+                console.log(notification)
+                await broadcastNotification({
+                  notification: {
+                    _id: notification._id.toString(),
+                    recipient: recipientId,
+                    actor: {
+                      _id: notification.actor._id.toString(),
+                      username: notification.actor.username,
+                      imageUrl: notification.actor.imageUrl ?? "",
+                    },
+                    type: "like",
+                    post: String(notification.post) ,
+                    comment: String(notification.comment) ,
+                    read: notification.read,
+                    createdAt: notification.createdAt.toISOString(),
+                  },
+                });
+              }
+            }
+          } catch (error) {
+            // A notification failure should not undo a successful like.
+            console.error("Like notification failed:", error);
+          }
+        }
       }
     } catch (error: unknown) {
       const isDuplicateKey =
@@ -90,7 +173,6 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   } else {
     const result = await Like.deleteOne(filter);
 
-    // Decrease the counter only if a Like was actually deleted.
     if (result.deletedCount === 1) {
       await Post.updateOne(
         { _id: postObjectId },
@@ -101,7 +183,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   const [likeExists, updatedPost] = await Promise.all([
     Like.exists(filter),
-    Post.findById(postObjectId).select("likesCount").lean(),
+    Post.findById(postObjectId)
+      .select("likesCount")
+      .lean(),
   ]);
 
   if (!updatedPost) {
