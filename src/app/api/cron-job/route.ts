@@ -24,12 +24,12 @@ async function deleteImage(publicId: string) {
 export const GET = withErrorHandler(async (req: NextRequest) => {
   const url=new URL(req.url);
   const secret=url.searchParams.get("key");
-  if(secret!=process.env.CRON_SECRET_KEY){
-    return NextResponse.json({
-      message:"Unauthorized",
-      success:false
-    })
-  });
+  if (secret !== process.env.CRON_SECRET_KEY) {
+    return NextResponse.json(
+      { message: "Unauthorized", success: false },
+      { status: 401 },
+    );
+  }
   await Connect();
 
   try {

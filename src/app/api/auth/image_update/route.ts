@@ -1,11 +1,8 @@
-import { clerkClient } from "@clerk/nextjs/server";
-import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-
-
-export  async function POST(req:NextRequest) {
-    try{
-        await
-    }
-    catch{}
+export async function POST() {
+  return NextResponse.json(
+    { message: "Image update is not configured on this deployment." },
+    { status: 501 },
+  );
 }

@@ -28,7 +28,7 @@ export default function SideBar() {
             {label}
             </Link>
         ))}
-        </div>
-    </div>
+      </nav>
+    </aside>
   );
 }
