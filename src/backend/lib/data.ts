@@ -75,7 +75,7 @@ export const mobileNav: NavItem[] = [
   { label: 'Home', icon: 'home', href: '/', active: true },
   { label: 'Search', icon: 'search', href: '/search' },
   { label: 'Upload', icon: 'add_box', href: '/upload', accentIcon: true },
-  { label: 'Messages', icon: 'mail', href: '/messages', dot: true },
+  { label: "Reels", icon: "movie", href: "/reels" },
   { label: 'Profile', icon: 'person', href: '/profile' },
 ]
 

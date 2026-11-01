@@ -28,7 +28,7 @@ import {
   formatDate,
 } from "@/backend/lib/post-card-utils";
 import type { CommentWithAuthor } from "@/types/comment";
-
+import { createPortal } from "react-dom";
 type CommentItem = CommentWithAuthor & {
   repliesCount?: number;
   parentCommentId?: string | null;
@@ -86,7 +86,13 @@ function CommentsModalComponent({
   onCommentDeleted
 }: Props) {
   const commentsContainerRef = useRef<HTMLDivElement>(null);
+  // for comment to overlay the modal when replying to a comment
+  const [mounted, setMounted] = useState(false);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!open || !mounted) return null;
   useEffect(() => {
     if (!open) return;
     document.body.style.overflow = "hidden";
@@ -120,9 +126,9 @@ function CommentsModalComponent({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-100 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -299,6 +305,7 @@ function CommentsModalComponent({
         </form>
       </section>
     </div>
+    ,document.body
   );
 }
 interface ThreadProps {

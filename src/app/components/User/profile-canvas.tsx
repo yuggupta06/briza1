@@ -36,17 +36,20 @@ import FollowButton from "@/app/components/follow/FollowButton";
 import FollowStats from "@/app/components/follow/FollowStats";
 import { Avatar } from "@/app/components/ui/avatar";
 
-import { usePaginatedPosts } from "@/app/hooks/posts/use-paginated-posts";
+import {
+  usePaginatedData,
+  type PaginatedResponse,
+} from "@/app/hooks/Pagination/use-paginated-data";
 import { usePostInteractions } from "@/app/hooks/posts/use-post-interactions";
 import { useProfileActions } from "@/app/hooks/posts/use-profile-actions";
 import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
 
 import { formatCount, formatDate } from "@/backend/lib/post-card-utils";
+import { FollowPreview } from "@/types/follow";
 import type { PostType } from "@/types/post";
 import type { UserType } from "@/types/user";
 import PostTimestamp from "../Posts/PostTimestamp";
-import { FollowPreview } from "@/types/follow";
 
 type ProfileTab = "posts" | "saved" | "liked";
 
@@ -124,17 +127,26 @@ function ProfileCanvas({
   // Pagination hooks
   // --------------------------------------------------
 
+
   const fetchProfilePostsPage = useCallback(
-    async (cursor: string | null) => {
-      const response = await axios.get("/api/posts/get_posts", {
+    async (
+      cursor: string | null
+    ): Promise<PaginatedResponse<PostType>> => {
+      const { data } = await axios.get("/api/posts/get_posts", {
         params: {
-          ...(isOwner ? {} : { username: user.username }),
+          ...(!isOwner ? { username: user.username } : {}),
           ...(cursor ? { cursor } : {}),
         },
         withCredentials: true,
       });
 
-      return response.data;
+      return {
+        success: data.success,
+        items: data.posts ?? [],
+        pagination: data.pagination,
+        error: data.error,
+        message: data.message,
+      };
     },
     [isOwner, user.username]
   );
@@ -143,29 +155,39 @@ function ProfileCanvas({
     setTotalPosts(user.totalPosts ?? 0);
   }, [user._id, user.totalPosts]);
   const fetchLikedPostsPage = useCallback(
-    async (cursor: string | null) => {
-      const response = await axios.get("/api/posts/liked", {
+    async (
+      cursor: string | null
+    ): Promise<PaginatedResponse<PostType>> => {
+      const { data } = await axios.get("/api/posts/liked", {
         params: cursor ? { cursor } : {},
         withCredentials: true,
       });
 
-      return response.data;
+      return {
+        success: data.success,
+        items: data.posts ?? [],
+        pagination: data.pagination,
+        error: data.error,
+        message: data.message,
+      };
     },
     []
   );
 
-  const profilePagination = usePaginatedPosts(
-    fetchProfilePostsPage
+  const profilePagination = usePaginatedData(
+    fetchProfilePostsPage,
+    (post) => post._id
   );
 
-  const likedPagination = usePaginatedPosts(
-    fetchLikedPostsPage
+  const likedPagination = usePaginatedData(
+    fetchLikedPostsPage,
+    (post) => post._id
   );
 
   // Profile posts pagination state.
   const {
-    posts,
-    setPosts,
+    items: posts,
+    setItems: setPosts,
     isLoading,
     isLoadingMore: isLoadingMorePosts,
     hasMore: hasMorePosts,
@@ -178,8 +200,8 @@ function ProfileCanvas({
 
   // Liked posts pagination state.
   const {
-    posts: likedPosts,
-    setPosts: setLikedPosts,
+    items: likedPosts,
+    setItems: setLikedPosts,
     isLoading: isLoadingLikedPosts,
     isLoadingMore: isLoadingMoreLikedPosts,
     hasMore: hasMoreLikedPosts,
@@ -602,18 +624,25 @@ function ProfileCanvas({
   // Copy profile link
   // --------------------------------------------------
 
-  async function copyProfileLink() {
-  try {
-    const profileUrl = `${window.location.origin}/profile/${encodeURIComponent(user.username)}`;
 
-    await navigator.clipboard.writeText(profileUrl);
-    showToast("Profile link copied.");
-  } catch {
-    showToast("Unable to copy profile link.");
-  } finally {
-    setMenuOpen(false);
-  }
-}
+  const copyProfileLink = async () => {
+    try {
+      const profilePath = isOwner
+        ? "/profile"
+        : `/profile/${encodeURIComponent(user.username)}`;
+
+      const profileUrl = `${window.location.origin}${profilePath}`;
+
+      await navigator.clipboard.writeText(profileUrl);
+
+      showToast("Profile link copied.");
+    } catch {
+      showToast("Unable to copy profile link.");
+    } finally {
+      setMenuOpen(false);
+    }
+  };
+
 
   // --------------------------------------------------
   // Derived UI values

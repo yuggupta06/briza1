@@ -1,12 +1,22 @@
 
 "use client";
 
+import axios from "axios";
 import { LoaderCircle, X } from "lucide-react";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import FollowUserItem from "@/app/components/follow/FollowUserItem";
-import type { FollowListType } from "@/app/hooks/follow/useFollowList";
-import { useFollowList } from "@/app/hooks/follow/useFollowList";
+import {
+  usePaginatedData,
+  type PaginatedResponse,
+} from "@/app/hooks/Pagination/use-paginated-data";
+
+type FollowListType = "followers" | "following";
+
+import type {
+  FollowListResponse,
+  FollowUser,
+} from "@/types/follow";
 
 interface FollowListModalProps {
   username: string;
@@ -19,22 +29,73 @@ export default function FollowListModal({
   type,
   onClose,
 }: FollowListModalProps) {
+
+  // 1. Fetch a page of followers or following.
+  const fetchFollowPage = useCallback(
+    async (
+      cursor: string | null
+    ): Promise<PaginatedResponse<FollowUser>> => {
+      const params = new URLSearchParams({
+        username,
+        limit: "20",
+      });
+
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+
+      const response = await axios.get<FollowListResponse>(
+        `/api/follow/${type}?${params.toString()}`
+      );
+
+      const page = response.data;
+
+      if (!page.success) {
+        throw new Error("Unable to load users");
+      }
+
+      return {
+        success: true,
+        items: page.users,
+        pagination: page.pagination,
+      };
+    },
+    [username, type]
+  );
+
+  // 2. Initialize generic pagination.
   const {
-    users,
+    items: users,
     isLoading,
     isLoadingMore,
     error,
     hasMore,
+    reset,
+    fetchFirstPage,
     loadMore,
-  } = useFollowList(username, type);
+  } = usePaginatedData<FollowUser>(
+    fetchFollowPage,
+    (user) => user._id
+  );
 
+  // 3. Fetch the first page when the modal opens
+  // or username/type changes.
+  useEffect(() => {
+    reset();
+    void fetchFirstPage();
+  }, [reset, fetchFirstPage]);
+
+  // 4. Close modal using Escape.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
 
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [onClose]);
 
   const title = type === "followers" ? "Followers" : "Following";
@@ -57,7 +118,11 @@ export default function FollowListModal({
             {title}
           </h2>
 
-          <button type="button" onClick={onClose} aria-label="Close list">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close list"
+          >
             <X size={20} />
           </button>
         </header>
@@ -88,7 +153,7 @@ export default function FollowListModal({
           {hasMore && (
             <button
               type="button"
-              onClick={loadMore}
+              onClick={() => void loadMore()}
               disabled={isLoadingMore}
               className="my-3 w-full rounded-lg border py-2 text-sm disabled:opacity-60"
             >

@@ -32,7 +32,6 @@ const fetcher = async (
 };
 
 export function useNotifications() {
-  // const {mutateCurrentUser,currentUser} =useCurrentUser
   const getKey = useCallback(
     (
       pageIndex: number,
@@ -79,23 +78,6 @@ export function useNotifications() {
     (event: NotificationEvent) => {
       const notification = event?.notification;
       if (!notification?._id) return;
-      
-    //    if (notification.type === "follow") {
-    //   void mutateCurrentUser(
-    //     (currentData) => {
-    //       if (!currentUser) return currentUser;
-
-    //       return {
-    //         ...currentData,
-    //         user: {
-    //           ...currentUser,
-    //           followers: currentUser.followers + 1,
-    //         },
-    //       };
-    //     },
-    //     { revalidate: false }
-    //   );
-    // }
 
       void mutate(
         (pages) => {

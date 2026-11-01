@@ -4,11 +4,10 @@
 import axios from "axios";
 import { useCallback, useReducer, useRef } from "react";
 import type { SetStateAction } from "react";
-import type { PostType } from "@/types/post";
 
-export interface PaginatedPostsResponse {
+export interface PaginatedResponse<T> {
   success: boolean;
-  posts: PostType[];
+  items: T[];
   pagination: {
     hasMore: boolean;
     nextCursor: string | null;
@@ -17,12 +16,12 @@ export interface PaginatedPostsResponse {
   message?: string;
 }
 
-type FetchPage = (
+type FetchPage<T> = (
   cursor: string | null
-) => Promise<PaginatedPostsResponse>;
+) => Promise<PaginatedResponse<T>>;
 
-interface PaginatedPostsState {
-  posts: PostType[];
+interface PaginatedState<T> {
+  items: T[];
   isLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
@@ -30,11 +29,11 @@ interface PaginatedPostsState {
   error: string;
 }
 
-type Action =
+type Action<T> =
   | { type: "first-page-start" }
   | {
       type: "first-page-success";
-      posts: PostType[];
+      items: T[];
       hasMore: boolean;
       nextCursor: string | null;
     }
@@ -42,24 +41,32 @@ type Action =
   | { type: "load-more-start" }
   | {
       type: "load-more-success";
-      posts: PostType[];
+      items: T[];
       hasMore: boolean;
       nextCursor: string | null;
     }
   | { type: "load-more-error"; error: string }
-  | { type: "set-posts"; updater: SetStateAction<PostType[]> }
+  | {
+      type: "set-items";
+      updater: SetStateAction<T[]>;
+    }
   | { type: "reset" };
 
-const initialState: PaginatedPostsState = {
-  posts: [],
-  isLoading: true,
-  isLoadingMore: false,
-  hasMore: false,
-  nextCursor: null,
-  error: "",
-};
+function createInitialState<T>(): PaginatedState<T> {
+  return {
+    items: [],
+    isLoading: true,
+    isLoadingMore: false,
+    hasMore: false,
+    nextCursor: null,
+    error: "",
+  };
+}
 
-function getErrorMessage(error: unknown, fallback: string): string {
+function getErrorMessage(
+  error: unknown,
+  fallback: string
+): string {
   if (axios.isAxiosError(error)) {
     return (
       error.response?.data?.error ||
@@ -68,13 +75,15 @@ function getErrorMessage(error: unknown, fallback: string): string {
     );
   }
 
-  return error instanceof Error ? error.message : fallback;
+  return error instanceof Error
+    ? error.message
+    : fallback;
 }
 
-function reducer(
-  state: PaginatedPostsState,
-  action: Action
-): PaginatedPostsState {
+function reducer<T>(
+  state: PaginatedState<T>,
+  action: Action<T>
+): PaginatedState<T> {
   switch (action.type) {
     case "first-page-start":
       return {
@@ -87,7 +96,7 @@ function reducer(
     case "first-page-success":
       return {
         ...state,
-        posts: action.posts,
+        items: action.items,
         isLoading: false,
         isLoadingMore: false,
         hasMore: action.hasMore,
@@ -111,17 +120,11 @@ function reducer(
       };
 
     case "load-more-success": {
-      const existingIds = new Set(
-        state.posts.map((post) => post._id)
-      );
-
       return {
         ...state,
-        posts: [
-          ...state.posts,
-          ...action.posts.filter(
-            (post) => !existingIds.has(post._id)
-          ),
+        items: [
+          ...state.items,
+          ...action.items,
         ],
         isLoadingMore: false,
         hasMore: action.hasMore,
@@ -137,35 +140,39 @@ function reducer(
         error: action.error,
       };
 
-    case "set-posts":
+    case "set-items":
       return {
         ...state,
-        posts:
+        items:
           typeof action.updater === "function"
-            ? action.updater(state.posts)
+            ? action.updater(state.items)
             : action.updater,
       };
 
     case "reset":
-      return initialState;
+      return createInitialState<T>();
 
     default:
       return state;
   }
 }
 
-export function usePaginatedPosts(fetchPage: FetchPage) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+export function usePaginatedData<T>(
+  fetchPage: FetchPage<T>,
+  getId: (item: T) => string
+) {
+  const [state, dispatch] = useReducer(
+    reducer<T>,
+    undefined,
+    createInitialState<T>
+  );
 
-  // Identifies the latest request. Older requests cannot update the state.
   const requestIdRef = useRef(0);
-
-  // Prevents multiple load-more requests from running simultaneously.
   const requestInProgressRef = useRef(false);
 
-  const setPosts = useCallback(
-    (updater: SetStateAction<PostType[]>) => {
-      dispatch({ type: "set-posts", updater });
+  const setItems = useCallback(
+    (updater: SetStateAction<T[]>) => {
+      dispatch({ type: "set-items", updater });
     },
     []
   );
@@ -189,28 +196,25 @@ export function usePaginatedPosts(fetchPage: FetchPage) {
 
       if (!data.success || !data.pagination) {
         throw new Error(
-          data.error ||
-            data.message ||
-            "Invalid posts response."
+          data.error || data.message ||
+          "Invalid response."
         );
       }
 
       dispatch({
         type: "first-page-success",
-        posts: data.posts,
+        items: data.items,
         hasMore: data.pagination.hasMore,
         nextCursor: data.pagination.nextCursor,
       });
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
 
-      console.error("Unable to fetch posts:", error);
-
       dispatch({
         type: "first-page-error",
         error: getErrorMessage(
           error,
-          "Unable to load posts. Please try again."
+          "Unable to load data."
         ),
       });
     } finally {
@@ -243,28 +247,30 @@ export function usePaginatedPosts(fetchPage: FetchPage) {
 
       if (!data.success || !data.pagination) {
         throw new Error(
-          data.error ||
-            data.message ||
-            "Invalid posts response."
+          data.error || data.message ||
+          "Invalid response."
         );
       }
 
       dispatch({
         type: "load-more-success",
-        posts: data.posts,
+        items: data.items.filter(
+          (item) =>
+            !state.items.some(
+              (existing) => getId(existing) === getId(item)
+            )
+        ),
         hasMore: data.pagination.hasMore,
         nextCursor: data.pagination.nextCursor,
       });
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
 
-      console.error("Unable to load more posts:", error);
-
       dispatch({
         type: "load-more-error",
         error: getErrorMessage(
           error,
-          "Unable to load more posts. Please try again."
+          "Unable to load more data."
         ),
       });
     } finally {
@@ -272,11 +278,17 @@ export function usePaginatedPosts(fetchPage: FetchPage) {
         requestInProgressRef.current = false;
       }
     }
-  }, [fetchPage, state.hasMore, state.nextCursor]);
+  }, [
+    fetchPage,
+    state.hasMore,
+    state.nextCursor,
+    state.items,
+    getId,
+  ]);
 
   return {
     ...state,
-    setPosts,
+    setItems,
     reset,
     fetchFirstPage,
     loadMore,

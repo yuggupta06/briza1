@@ -3,8 +3,9 @@
 import { useState } from "react";
 
 import FollowListModal from "@/app/components/follow/FollowListModal";
-import type { FollowListType } from "@/app/hooks/follow/useFollowList";
 import type { FollowPreview } from "@/types/follow";
+type FollowListType = "followers" | "following";
+
 interface FollowStatsProps {
   username: string;
   followers: number;
