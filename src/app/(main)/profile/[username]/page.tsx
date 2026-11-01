@@ -1,19 +1,27 @@
+
 "use client";
+
 import { useEffect, useState } from "react";
-import { useParams, useRouter,useSearchParams } from "next/navigation";
+import {
+  useParams,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { LoaderCircle, UserRoundX } from "lucide-react";
 import axios from "axios";
 
 import ProfileCanvas from "@/app/components/User/profile-canvas";
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import type { UserType } from "@/types/user";
+import type { FollowPreview } from "@/types/follow";
 
 export default function PublicProfilePage() {
   const params = useParams<{ username: string }>();
   const username = params.username;
+
   const router = useRouter();
   const searchParams = useSearchParams();
-const postId = searchParams.get("post");
+  const postId = searchParams.get("post");
 
   const {
     currentUser,
@@ -23,83 +31,103 @@ const postId = searchParams.get("post");
   const currentUsername = currentUser?.username?.toLowerCase();
 
   const [user, setUser] = useState<UserType | null>(null);
+
+  const [followerPreviews, setFollowerPreviews] = useState<
+    FollowPreview[]
+  >([]);
+
+  const [followingPreviews, setFollowingPreviews] = useState<
+    FollowPreview[]
+  >([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-  if (isCurrentUserLoading || !username) return;
+    if (isCurrentUserLoading || !username) return;
 
-  if (
-    currentUsername &&
-    currentUsername === username.toLowerCase()
-  ) {
-    router.replace(
-      postId
-        ? `/profile?post=${encodeURIComponent(postId)}`
-        : "/profile"
-    );
-  }
-}, [
-  username,
-  currentUsername,
-  isCurrentUserLoading,
-  router,
-  postId,
-]);
-useEffect(() => {
-  if (!username || isCurrentUserLoading) return;
-
-  // Don't fetch the public profile if this is the owner.
-  if (
-    currentUsername &&
-    currentUsername === username.toLowerCase()
-  ) {
-    return;
-  }
-
-  const controller = new AbortController();
-
-  async function loadProfile() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await axios.get(
-        `/api/profile/${encodeURIComponent(username)}`,
-        { signal: controller.signal }
+    if (
+      currentUsername &&
+      currentUsername === username.toLowerCase()
+    ) {
+      router.replace(
+        postId
+          ? `/profile?post=${encodeURIComponent(postId)}`
+          : "/profile"
       );
+    }
+  }, [
+    username,
+    currentUsername,
+    isCurrentUserLoading,
+    router,
+    postId,
+  ]);
 
-      setUser(response.data.user);
-    } catch (error) {
-      if (controller.signal.aborted) return;
+  useEffect(() => {
+    if (!username || isCurrentUserLoading) return;
 
-      setUser(null);
+    // Don't fetch the public profile if this is the owner.
+    if (
+      currentUsername &&
+      currentUsername === username.toLowerCase()
+    ) {
+      return;
+    }
 
-      if (
-        axios.isAxiosError(error) &&
-        error.response?.status === 404
-      ) {
-        setError("User not found.");
-      } else {
-        setError("Failed to load profile. Please try again.");
-      }
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
+    const controller = new AbortController();
+
+    async function loadProfile() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await axios.get(
+          `/api/profile/${encodeURIComponent(username)}`,
+          { signal: controller.signal }
+        );
+
+        setUser(response.data.user);
+
+        setFollowerPreviews(
+          response.data.followerPreviews ?? []
+        );
+
+        setFollowingPreviews(
+          response.data.followingPreviews ?? []
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+
+        setUser(null);
+        setFollowerPreviews([]);
+        setFollowingPreviews([]);
+
+        if (
+          axios.isAxiosError(error) &&
+          error.response?.status === 404
+        ) {
+          setError("User not found.");
+        } else {
+          setError("Failed to load profile. Please try again.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
-  }
 
-  void loadProfile();
+    void loadProfile();
 
-  return () => controller.abort();
-}, [
-  username,
-  currentUsername,
-  isCurrentUserLoading,
-  retryCount,
-]);
+    return () => controller.abort();
+  }, [
+    username,
+    currentUsername,
+    isCurrentUserLoading,
+    retryCount,
+  ]);
 
   if (loading || isCurrentUserLoading) {
     return (
@@ -143,6 +171,7 @@ useEffect(() => {
                 ? "Profile not found"
                 : "Unable to load profile"}
             </h2>
+
             <p className="text-sm text-muted-foreground">
               {error || "This profile may not be available."}
             </p>
@@ -151,7 +180,9 @@ useEffect(() => {
           {error !== "User not found." && (
             <button
               type="button"
-              onClick={() => setRetryCount((count) => count + 1)}
+              onClick={() =>
+                setRetryCount((count) => count + 1)
+              }
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 active:scale-[0.98]"
             >
               Try again
@@ -162,5 +193,12 @@ useEffect(() => {
     );
   }
 
-  return <ProfileCanvas user={user} isOwner={false} />;
+  return (
+    <ProfileCanvas
+      user={user}
+      isOwner={false}
+      followerPreviews={followerPreviews}
+      followingPreviews={followingPreviews}
+    />
+  );
 }

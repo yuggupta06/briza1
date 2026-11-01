@@ -38,6 +38,8 @@ export default function UserPage() {
   const {
     currentUser,
     isLoading,
+    followerPreviews,
+  followingPreviews,
     error: loadError,
     mutateCurrentUser,
   } = useCurrentUser();
@@ -327,6 +329,8 @@ export default function UserPage() {
           onEditProfile={openModal}
           onSignOut={signOut}
           onDeleteAccount={handleDeleteAccount}
+          followerPreviews={followerPreviews}
+          followingPreviews={followingPreviews}
         />
       </div>
 

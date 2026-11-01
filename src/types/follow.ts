@@ -28,3 +28,8 @@ export interface FollowListResponse {
     nextCursor: string | null;
   };
 }
+export interface FollowPreview {
+  _id: string;
+  username: string;
+  imageUrl: string;
+}

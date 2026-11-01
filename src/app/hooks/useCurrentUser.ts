@@ -3,11 +3,15 @@
 
 import useSWR from "swr";
 import axios from "axios";
-import { UserType } from "@/types/user";
+
+import type { UserType } from "@/types/user";
+import type { FollowPreview } from "@/types/follow";
 
 type CurrentUserResponse = {
   success: boolean;
   user: UserType;
+  followerPreviews: FollowPreview[];
+  followingPreviews: FollowPreview[];
 };
 
 const fetchCurrentUser = async (
@@ -35,6 +39,10 @@ export function useCurrentUser() {
 
   return {
     currentUser: data?.user,
+
+    followerPreviews: data?.followerPreviews ?? [],
+    followingPreviews: data?.followingPreviews ?? [],
+
     isLoading,
     error,
     mutateCurrentUser: mutate,

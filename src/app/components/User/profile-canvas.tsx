@@ -46,6 +46,7 @@ import { formatCount, formatDate } from "@/backend/lib/post-card-utils";
 import type { PostType } from "@/types/post";
 import type { UserType } from "@/types/user";
 import PostTimestamp from "../Posts/PostTimestamp";
+import { FollowPreview } from "@/types/follow";
 
 type ProfileTab = "posts" | "saved" | "liked";
 
@@ -55,6 +56,8 @@ interface ProfileCanvasProps {
   onEditProfile?: () => void;
   onSignOut?: () => void;
   onDeleteAccount?: () => void;
+  followerPreviews: FollowPreview[];
+  followingPreviews: FollowPreview[];
 }
 
 function toPostType(post: PostType): PostType {
@@ -81,6 +84,8 @@ function ProfileCanvas({
   onEditProfile,
   onSignOut,
   onDeleteAccount,
+  followerPreviews,
+  followingPreviews
 }: ProfileCanvasProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -135,7 +140,7 @@ function ProfileCanvas({
   );
   // when profile user changes
   useEffect(() => {
-    setTotalPosts(user.totalPosts??0);
+    setTotalPosts(user.totalPosts ?? 0);
   }, [user._id, user.totalPosts]);
   const fetchLikedPostsPage = useCallback(
     async (cursor: string | null) => {
@@ -759,7 +764,7 @@ function ProfileCanvas({
                   {formatCount(totalPosts)}
                 </span>
                 <span className="ml-1.5 text-sm text-outline">
-                  posts 
+                  posts
                 </span>
               </button>
 
@@ -767,6 +772,8 @@ function ProfileCanvas({
                 username={user.username}
                 followers={profileFollowers}
                 following={profileFollowing}
+                followerPreviews={followerPreviews}
+                followingPreviews={followingPreviews}
               />
             </div>
 
@@ -1000,14 +1007,14 @@ function ProfileCanvas({
             </div>
 
             {/* Post media */}
-            <div className="flex min-h-0 w-full flex-none flex-col overflow-y-auto overscroll-contain md:w-[58%] md:flex-1 md:overflow-hidden">
+            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden md:w-[58%]">
               <div
                 onDoubleClick={
                   selectedPost.postType !== "text"
                     ? handleMediaDoubleClick
                     : undefined
                 }
-                className="relative flex aspect-square w-full shrink-0 items-center justify-center overflow-hidden bg-black md:aspect-auto md:min-h-0 md:flex-1"
+                className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-black"
               >
                 {selectedPost.postType === "image" ? (
                   <Image
@@ -1023,7 +1030,8 @@ function ProfileCanvas({
                     src={selectedPost.postUrl}
                     controls
                     playsInline
-                    className="max-h-[65dvh] w-full object-contain md:max-h-full"
+                    preload="metadata"
+                    className="h-full w-full object-contain"
                   />
                 ) : (
                   <div className="flex min-h-64 w-full items-center justify-center p-8 text-center text-white">
