@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import FollowListModal from "@/app/components/follow/FollowListModal";
 import type { FollowPreview } from "@/types/follow";
+import Image from "next/image";
 type FollowListType = "followers" | "following";
 
 interface FollowStatsProps {
@@ -27,7 +28,7 @@ export default function FollowStats({
   const renderAvatars = (users: FollowPreview[]) => (
   <div className="flex -space-x-2">
     {users.slice(0, 3).map((user) => (
-      <img
+      <Image
         key={user._id}
         src={user.imageUrl || "/default-avatar.png"}
         alt={user.username}

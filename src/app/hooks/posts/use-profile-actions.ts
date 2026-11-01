@@ -201,6 +201,7 @@ export function useProfileActions({
     showToast,
     router,
     searchParams,
+    mutateCurrentUser,
   ]);
 
   return {

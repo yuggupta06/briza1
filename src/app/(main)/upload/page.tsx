@@ -14,7 +14,6 @@ import {
 import axios from "axios";
 import toast, { Toaster } from "react-hot-toast";
 import { useCallback, useEffect, useState } from "react";
-import toastIcon from "@/helpers/toastHelper";
 import { notoSerif } from "@/app/fonts";
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 type UploadedMedia = {
