@@ -416,7 +416,7 @@ function ProfileCanvas({
     void fetchLikedPosts();
   }, [tab, isOwner, resetLikedPosts, fetchLikedPosts]);
 
-  // --------------------------------------------------
+  // ------Open post-----
   // Open post
   // --------------------------------------------------
 
@@ -442,8 +442,6 @@ function ProfileCanvas({
   // --------------------------------------------------
   // Post URL synchronization
   // --------------------------------------------------
-
-
 
   useEffect(() => {
     const previousPostId = previousPostIdRef.current;
@@ -521,8 +519,6 @@ function ProfileCanvas({
     selectedPost?._id,
     user.username,
   ]);
-
-
 
   // --------------------------------------------------
   // Close post
@@ -607,15 +603,17 @@ function ProfileCanvas({
   // --------------------------------------------------
 
   async function copyProfileLink() {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      showToast("Profile link copied.");
-    } catch {
-      showToast("Unable to copy profile link.");
-    }
+  try {
+    const profileUrl = `${window.location.origin}/profile/${encodeURIComponent(user.username)}`;
 
+    await navigator.clipboard.writeText(profileUrl);
+    showToast("Profile link copied.");
+  } catch {
+    showToast("Unable to copy profile link.");
+  } finally {
     setMenuOpen(false);
   }
+}
 
   // --------------------------------------------------
   // Derived UI values
