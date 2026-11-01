@@ -92,7 +92,7 @@ function CommentsModalComponent({
   useEffect(() => {
     setMounted(true);
   }, []);
-  if (!open || !mounted) return null;
+  
   useEffect(() => {
     if (!open) return;
     document.body.style.overflow = "hidden";
@@ -124,7 +124,7 @@ function CommentsModalComponent({
     [commentsLoading, isSubmittingComment, submitComment]
   );
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   return createPortal(
     <div

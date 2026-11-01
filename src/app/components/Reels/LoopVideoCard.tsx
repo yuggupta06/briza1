@@ -11,7 +11,7 @@ import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
 
 // import { useRealtime } from "@/app/providers/RealtimeProvider";
-
+import Image from "next/image";
 import type { PostType } from "@/types/post";
 import { Heart } from "lucide-react";
 
@@ -63,7 +63,6 @@ export function LoopVideoCard({
         setCommentText,
         setSubmitError,
         fetchComments,
-        handleNewComment,
         loadMoreComments,
         submitComment,
         handleLike,
@@ -227,7 +226,7 @@ export function LoopVideoCard({
             {/* Creator information and caption */}
             <div className="absolute bottom-24 left-4 right-20 z-10 space-y-3">
                 <div className="flex items-center gap-3">
-                    <img
+                    <Image
                         src={post.author.imageUrl || "/default-avatar.png"}
                         alt={`@${post.author.username}`}
                         className="h-10 w-10 rounded-full border border-white/70 object-cover"
