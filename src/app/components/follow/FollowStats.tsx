@@ -32,6 +32,8 @@ export default function FollowStats({
         key={user._id}
         src={user.imageUrl || "/default-avatar.png"}
         alt={user.username}
+        width={32}
+        height={32}
         className="h-8 w-8 rounded-full border-2 border-white object-cover dark:border-black"
       />
     ))}

@@ -22,12 +22,35 @@ type UseReelScrollRestorationOptions = {
   loadMore: () => void;
 };
 
-const STORAGE_KEY = "briza-reels-scroll";
+// Dedicated storage key for Reels.
+const STORAGE_KEY = "briza:reels:scroll:v1";
+
+// Prevent repeated initial navigation checks.
+let hasCheckedInitialReload = false;
 
 function getSavedSnapshot(): ReelSnapshot | null {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
+
+    if (!saved) return null;
+
+    const parsed: unknown = JSON.parse(saved);
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("postId" in parsed) ||
+      !("offset" in parsed) ||
+      typeof parsed.postId !== "string" ||
+      typeof parsed.offset !== "number"
+    ) {
+      return null;
+    }
+
+    return {
+      postId: parsed.postId,
+      offset: parsed.offset,
+    };
   } catch {
     return null;
   }
@@ -45,11 +68,38 @@ export function useReelScrollRestoration({
   );
 
   const restoredPostIdRef = useRef<string | null>(null);
+
   const requestedForVideoCountRef = useRef<number | null>(null);
 
-  // Save the Reel with the largest visible area.
+  // 1. Clear the saved Reel snapshot ONLY on browser reload.
+  useEffect(() => {
+    if (hasCheckedInitialReload) return;
+
+    hasCheckedInitialReload = true;
+
+    const navigationEntry = performance.getEntriesByType(
+      "navigation"
+    )[0] as PerformanceNavigationTiming | undefined;
+
+    if (navigationEntry?.type === "reload") {
+      sessionStorage.removeItem(STORAGE_KEY);
+
+      setIsRestoring(false);
+
+      // Reels use an internal scrollable container.
+      if (containerRef.current) {
+        containerRef.current.scrollTo({
+          top: 0,
+          behavior: "instant",
+        });
+      }
+    }
+  }, [containerRef]);
+
+  // 2. Save the Reel with the largest visible area.
   const savePosition = useCallback(() => {
     const container = containerRef.current;
+
     if (!container) return;
 
     const containerRect = container.getBoundingClientRect();
@@ -77,8 +127,12 @@ export function useReelScrollRestoration({
 
     if (!visibleReel) return;
 
+    const postId = visibleReel.reel.dataset.postId;
+
+    if (!postId) return;
+
     const snapshot: ReelSnapshot = {
-      postId: visibleReel.reel.dataset.postId!,
+      postId,
       offset: visibleReel.offset,
     };
 
@@ -92,8 +146,10 @@ export function useReelScrollRestoration({
     }
   }, [containerRef]);
 
-  // Restore the saved Reel once it becomes available.
+  // 3. Restore the saved Reel once it becomes available.
   useEffect(() => {
+    if (!isRestoring) return;
+
     const container = containerRef.current;
     const snapshot = getSavedSnapshot();
 
@@ -127,18 +183,20 @@ export function useReelScrollRestoration({
           container.scrollTop +
           currentOffset -
           snapshot.offset,
-        behavior: "auto",
+        behavior: "instant",
       });
 
       restoredPostIdRef.current = snapshot.postId;
+
       setIsRestoring(false);
       return;
     }
 
-    // The saved Reel isn't loaded yet.
-    // Request another SWR page and check again when it arrives.
+    // Saved Reel isn't loaded yet. Request another page.
     if (hasMore && !isLoadingMore) {
-      if (requestedForVideoCountRef.current !== videos.length) {
+      if (
+        requestedForVideoCountRef.current !== videos.length
+      ) {
         requestedForVideoCountRef.current = videos.length;
         loadMore();
       }
@@ -146,7 +204,7 @@ export function useReelScrollRestoration({
       return;
     }
 
-    // Stop restoring if there are no more pages to load.
+    // No more pages available.
     if (!hasMore && !isLoadingMore) {
       setIsRestoring(false);
     }
@@ -156,11 +214,13 @@ export function useReelScrollRestoration({
     hasMore,
     isLoadingMore,
     loadMore,
+    isRestoring,
   ]);
 
-  // Save while scrolling, when the page is hidden, and before unmount.
+  // 4. Save while scrolling and before leaving the Reels page.
   useEffect(() => {
     const container = containerRef.current;
+
     if (!container) return;
 
     let saveFrame = 0;
@@ -172,11 +232,11 @@ export function useReelScrollRestoration({
     };
 
     const handleScroll = () => {
-      if (saveFrame) return;
+      if (isRestoring || saveFrame) return;
 
       saveFrame = requestAnimationFrame(() => {
         saveFrame = 0;
-        saveIfReady();
+        savePosition();
       });
     };
 
@@ -195,6 +255,7 @@ export function useReelScrollRestoration({
     });
 
     window.addEventListener("pagehide", handlePageHide);
+
     document.addEventListener(
       "visibilitychange",
       handleVisibilityChange
@@ -202,7 +263,9 @@ export function useReelScrollRestoration({
 
     return () => {
       container.removeEventListener("scroll", handleScroll);
+
       window.removeEventListener("pagehide", handlePageHide);
+
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange
@@ -212,8 +275,10 @@ export function useReelScrollRestoration({
         cancelAnimationFrame(saveFrame);
       }
 
-      // Save the latest position before the component unmounts.
-      saveIfReady();
+      // Preserve the snapshot during client-side navigation.
+      if (!isRestoring) {
+        savePosition();
+      }
     };
   }, [containerRef, isRestoring, savePosition]);
 

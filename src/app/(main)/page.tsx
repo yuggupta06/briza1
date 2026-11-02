@@ -1,8 +1,8 @@
 
 "use client"
 import ImagesFeed from "@/app/components/Feed/feed";
-import { StoriesStrip } from "@/app/components/Stories/stories-strip";
 import NotificationBell from "@/app/components/Notifications/NotificationBell";
+import { StoriesStrip } from "@/app/components/Stories/stories-strip";
 import { VideoPlaybackProvider } from "@/app/context/VideoPlaybackContext";
 import { useFeedScrollRestoration } from "@/app/hooks/scroll-restoration'/useFeedScrollRestoration";
 

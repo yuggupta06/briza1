@@ -229,6 +229,8 @@ export function LoopVideoCard({
                     <Image
                         src={post.author.imageUrl || "/default-avatar.png"}
                         alt={`@${post.author.username}`}
+                        width={40}
+                        height={40}
                         className="h-10 w-10 rounded-full border border-white/70 object-cover"
                     />
 
