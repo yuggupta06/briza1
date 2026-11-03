@@ -1,21 +1,25 @@
 
 "use client";
 
-import Image from "next/image";
-import { CldUploadWidget } from "next-cloudinary";
-import type { CloudinaryUploadWidgetResults } from "next-cloudinary";
+import { notoSerif } from "@/app/fonts";
+import { PaginatedResponse } from "@/app/hooks/Pagination/use-paginated-data";
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
+import { PostType } from "@/types/post";
+import axios from "axios";
 import {
+  CheckCircle2,
   ImagePlus,
-  X,
   Loader2,
   Upload,
-  CheckCircle2,
+  X,
 } from "lucide-react";
-import axios from "axios";
-import toast, { Toaster } from "react-hot-toast";
+import type { CloudinaryUploadWidgetResults } from "next-cloudinary";
+import { CldUploadWidget } from "next-cloudinary";
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
-import { notoSerif } from "@/app/fonts";
-import { useCurrentUser } from "@/app/hooks/useCurrentUser";
+import toast, { Toaster } from "react-hot-toast";
+import { useSWRConfig } from "swr";
+import { unstable_serialize } from "swr/infinite";
 type UploadedMedia = {
   url: string;
   publicId: string;
@@ -27,7 +31,8 @@ type UploadedMedia = {
 
 export default function UploadSection() {
 
-  const { mutateCurrentUser } = useCurrentUser();
+  const {currentUser, mutateCurrentUser } = useCurrentUser();
+  const { mutate } = useSWRConfig();
   const [uploadedMedia, setUploadedMedia] =
     useState<UploadedMedia | null>(null);
   const [caption, setCaption] = useState("");
@@ -112,50 +117,103 @@ export default function UploadSection() {
     setShowSuccess(false);
   };
 
-  const handleSharePost = async () => {
-    if (!uploadedMedia || isSaving) return;
+  
+const handleSharePost = async () => {
+  if (!uploadedMedia || isSaving) return;
 
-    setIsSaving(true);
+  setIsSaving(true);
 
-    try {
-      await axios.post("/api/posts/upload-files", {
-        secure_url: uploadedMedia.url,
-        resource_type: uploadedMedia.resourceType,
-        caption: caption.trim(),
-      });
+  try {
+    const response = await axios.post("/api/posts/upload-files", {
+      secure_url: uploadedMedia.url,
+      resource_type: uploadedMedia.resourceType,
+      caption: caption.trim(),
+    });
 
-      setUploadedMedia(null);
-      setCaption("");
-      setShowSuccess(true);
-      await mutateCurrentUser(
-        (currentData) => {
-          if (!currentData) return currentData;
+    if (response.data?.success === false) {
+      throw new Error(
+        response.data.message || "Failed to publish post"
+      );
+    }
 
-          return {
-            ...currentData,
-            user: {
-              ...currentData.user,
-              totalPosts: (currentData.user.totalPosts ?? 0) + 1,
+    const newPost: PostType = response.data.post;
+
+    // Update the global profile posts SWR Infinite cache.
+    if (newPost && currentUser?._id) {
+      const cacheKey = `profile-posts-${currentUser._id}`;
+
+      const serializedKey = unstable_serialize(
+        () => [cacheKey, null] as const
+      );
+
+      await mutate(
+        serializedKey,
+        (
+          pages:
+            | PaginatedResponse<PostType>[]
+            | undefined
+        ) => {
+          if (!pages?.length) return pages;
+
+          const [firstPage, ...remainingPages] = pages;
+
+          return [
+            {
+              ...firstPage,
+              items: [
+                newPost,
+                ...firstPage.items.filter(
+                  (post) => post._id !== newPost._id
+                ),
+              ],
             },
-          };
+            ...remainingPages,
+          ];
         },
         { revalidate: false }
       );
-    } catch (error) {
-      console.error("Error publishing post:", error);
-
-      if (axios.isAxiosError(error)) {
-        toast.error(
-          error.response?.data?.message ||
-          "Failed to publish post"
-        );
-      } else {
-        toast.error("Failed to publish post");
-      }
-    } finally {
-      setIsSaving(false);
     }
-  };
+
+    setUploadedMedia(null);
+    setCaption("");
+    setShowSuccess(true);
+
+    // Update current user's totalPosts.
+    await mutateCurrentUser(
+      (currentData) => {
+        if (!currentData) return currentData;
+
+        return {
+          ...currentData,
+          user: {
+            ...currentData.user,
+            totalPosts:
+              (currentData.user.totalPosts ?? 0) + 1,
+          },
+        };
+      },
+      { revalidate: false }
+    );
+
+  } catch (error) {
+    console.error("Error publishing post:", error);
+
+    if (axios.isAxiosError(error)) {
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to publish post"
+      );
+    } else {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to publish post"
+      );
+    }
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   return (
     <>
@@ -426,3 +484,4 @@ export default function UploadSection() {
     </>
   );
 }
+

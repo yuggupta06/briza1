@@ -7,7 +7,6 @@ import { useCallback, useEffect } from "react";
 
 import FollowUserItem from "@/app/components/follow/FollowUserItem";
 import {
-  usePaginatedData,
   type PaginatedResponse,
 } from "@/app/hooks/Pagination/use-paginated-data";
 
@@ -17,6 +16,7 @@ import type {
   FollowListResponse,
   FollowUser,
 } from "@/types/follow";
+import { useLocalPaginatedData } from "@/app/hooks/Pagination/useLocalPaginatedData";
 
 interface FollowListModalProps {
   username: string;
@@ -73,9 +73,11 @@ export default function FollowListModal({
     reset,
     fetchFirstPage,
     loadMore,
-  } = usePaginatedData<FollowUser>(
-    fetchFollowPage,
-    (user) => user._id
+  } = useLocalPaginatedData<FollowUser>(
+    {
+      fetchPage: fetchFollowPage,
+      getId: (user) => user._id,
+    }
   );
 
   // 3. Fetch the first page when the modal opens

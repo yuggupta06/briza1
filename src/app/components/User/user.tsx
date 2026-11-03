@@ -19,6 +19,7 @@ import {
 
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import ProfileCanvas from "./profile-canvas";
+import { useSWRConfig } from "swr";
 
 type MeResponse = {
   success: boolean;
@@ -43,6 +44,7 @@ export default function UserPage() {
     error: loadError,
     mutateCurrentUser,
   } = useCurrentUser();
+  const { mutate } = useSWRConfig();
 
   // Edit profile state
   const [isOpen, setIsOpen] = useState(false);
@@ -224,14 +226,18 @@ export default function UserPage() {
         { withCredentials: true }
       )
       .catch(() => undefined)
-      .finally(() => {
-        void mutateCurrentUser(undefined, {
-          revalidate: false,
-        });
-
-        window.location.assign("/login");
-      });
-  }, [mutateCurrentUser]);
+      .finally(async () => {
+      // Clear all SWR cached data
+      await mutate(
+        () => true,
+        undefined,
+        { revalidate: false }
+      );
+      sessionStorage.clear();
+      // Redirect to login
+      window.location.assign("/login");
+    });
+}, [mutate]);
 
   // Open the delete confirmation modal.
   const handleDeleteAccount = useCallback(() => {
@@ -257,12 +263,15 @@ export default function UserPage() {
         throw new Error(
           data.message || "Could not delete your account."
         );
-      }
+      } 
+      sessionStorage.clear();
 
       // Clear the cached current-user data.
-      await mutateCurrentUser(undefined, {
-        revalidate: false,
-      });
+      await mutate(
+      () => true,
+      undefined,
+      { revalidate: false }
+    );
 
       // The API should already have expired the token cookie.
       window.location.assign("/login");
@@ -277,9 +286,10 @@ export default function UserPage() {
             : "Could not delete your account. Please try again."
       );
     } finally {
+      
       setIsDeletingAccount(false);
     }
-  }, [isDeletingAccount, mutateCurrentUser]);
+  }, [isDeletingAccount, mutate]);
 
   if (isLoading) {
     return (

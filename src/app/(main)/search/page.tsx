@@ -105,12 +105,13 @@ export default function SearchBar() {
                 >
                   {user.imageUrl ? (
                     <Image
-                      className="rounded-full object-cover"
+                      className="size-11 shrink-0 rounded-full object-cover aspect-square"
                       src={user.imageUrl}
                       alt={`${user.username}'s profile`}
-                      width={45}
-                      height={45}
+                      width={44}
+                      height={44}
                     />
+
                   ) : (
                     <div
                       className="h-11.25 w-11.25 shrink-0 rounded-full bg-gray-700"

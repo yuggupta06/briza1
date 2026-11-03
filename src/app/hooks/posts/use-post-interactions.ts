@@ -4,6 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import type { CommentWithAuthor } from "@/types/comment";
+import { useLikedPostsCache } from "./useLikedPostsCache";
+import { useCurrentUser } from "../useCurrentUser";
+import { PostType } from "@/types/post";
 
 export interface InteractionPost {
   _id: string;
@@ -77,7 +80,7 @@ function normalizeComment(value: unknown): CommentWithAuthor {
 }
 
 interface UsePostInteractionsOptions {
-  post: InteractionPost | null;
+  post: PostType     | null;
   onCountsChange?: (
     postId: string,
     counts: {
@@ -97,6 +100,8 @@ export function usePostInteractions({
   const [commentCount, setCommentCount] = useState(
     post?.commentsCount ?? 0
   );
+  const {currentUser} = useCurrentUser();
+  const { updateLikedPosts } = useLikedPostsCache(currentUser?._id ?? "");
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const commentsRef = useRef<CommentWithAuthor[]>([]);
@@ -114,7 +119,7 @@ export function usePostInteractions({
   const [likeError, setLikeError] = useState("");
   const [submitError, setSubmitError] = useState("");
 
-  const postIdRef = useRef(post?._id);
+  const postRef = useRef(post);
   const likingRef = useRef(false);
   const fetchingRef = useRef(false);
   const submittingRef = useRef(false);
@@ -127,7 +132,7 @@ export function usePostInteractions({
       nextLiked: boolean,
       nextLikes: number,
       nextComments: number,
-      id = postIdRef.current
+      id = postRef.current?._id
     ) => {
       if (!id) return;
 
@@ -148,7 +153,7 @@ export function usePostInteractions({
   // Reset comment state only when the selected post changes.
   // Count updates must not clear comments or restart their loading state.
   useEffect(() => {
-  postIdRef.current = post?._id;
+  postRef.current = post;
 
   likedRef.current = post?.isLiked ?? false;
   likeCountRef.current = post?.likesCount ?? 0;
@@ -187,7 +192,7 @@ export function usePostInteractions({
 
   const fetchComments = useCallback(
     async (cursor: string | null = null) => {
-      const id = postIdRef.current;
+      const id = postRef.current?._id;
 
       if (!id || fetchingRef.current) return;
 
@@ -210,7 +215,7 @@ export function usePostInteractions({
           throw new Error(data.message || "Failed to fetch comments.");
         }
 
-        if (postIdRef.current !== id) return;
+        if (postRef.current?._id !== id) return;
 
         const fetched = data.comments.map(normalizeComment);
         for (const comment of fetched) {
@@ -243,14 +248,14 @@ export function usePostInteractions({
         setHasMoreComments(data.hasMore);
         setNextCursor(data.nextCursor);
       } catch (error) {
-        if (postIdRef.current === id) {
+        if (postRef.current?._id === id) {
           console.error("Error fetching comments:", error);
           setCommentsError("Couldn't load comments. Please try again.");
         }
       } finally {
         fetchingRef.current = false;
 
-        if (postIdRef.current === id) {
+        if (postRef.current?._id === id) {
           setCommentsLoading(false);
           setIsLoadingMore(false);
         }
@@ -262,7 +267,7 @@ export function usePostInteractions({
   const handleNewComment = useCallback(
     (value: unknown) => {
       const comment = normalizeComment(value);
-      const id = postIdRef.current;
+      const id = postRef.current?._id;
 
       if (!id || !comment._id || (comment.post && comment.post !== id)) return;
 
@@ -298,7 +303,7 @@ export function usePostInteractions({
 
   const submitComment = useCallback(
     async (textOverride?: string): Promise<boolean> => {
-      const id = postIdRef.current;
+      const id = postRef.current?._id;
       const text = (textOverride ?? commentText).trim();
 
       if (!id || !text || submittingRef.current) return false;
@@ -322,7 +327,7 @@ export function usePostInteractions({
           throw new Error(data.message || "Failed to create comment.");
         }
 
-        if (postIdRef.current !== id) return false;
+        if (postRef.current?._id !== id) return false;
 
         const newComment = normalizeComment(data.comment);
         handleNewComment(newComment);
@@ -348,7 +353,7 @@ export function usePostInteractions({
   );
 
   const handleLike = useCallback(async () => {
-    const id = postIdRef.current;
+    const id = postRef.current?._id;
     if (!id || likingRef.current) return;
 
     likingRef.current = true;
@@ -378,7 +383,7 @@ export function usePostInteractions({
         throw new Error(data.message || "Invalid like response.");
       }
 
-      if (postIdRef.current !== id) return;
+      if (postRef.current?._id !== id) return;
 
       likedRef.current = data.isLiked;
       likeCountRef.current = data.likesCount;
@@ -392,10 +397,11 @@ export function usePostInteractions({
         commentCountRef.current,
         id
       );
+      updateLikedPosts(postRef.current, data.isLiked);
     } catch (error) {
       console.error("Error updating like:", error);
 
-      if (postIdRef.current === id) {
+      if (postRef.current?._id === id) {
         likedRef.current = previousLiked;
         likeCountRef.current = previousCount;
 
@@ -413,7 +419,7 @@ export function usePostInteractions({
       likingRef.current = false;
       setIsLiking(false);
     }
-  }, [publishCounts]);
+  }, [publishCounts,updateLikedPosts]);
 
   const handleCommentDeleted = useCallback(
     (commentId: string, isReply: boolean) => {

@@ -5,8 +5,6 @@ import axios from "axios";
 import {
   ArrowLeft,
   Bookmark,
-  Camera,
-  ChevronDown,
   Grid2X2,
   Heart,
   Link2,
@@ -19,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import {
   memo,
   useCallback,
@@ -31,27 +28,31 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import CommentsModalComponent from "@/app/components/Comment/CommentsModal";
-import PostCard from "@/app/components/Posts/post-card";
 import FollowButton from "@/app/components/follow/FollowButton";
 import FollowStats from "@/app/components/follow/FollowStats";
 import { Avatar } from "@/app/components/ui/avatar";
 
-import {
-  usePaginatedData,
-  type PaginatedResponse,
-} from "@/app/hooks/Pagination/use-paginated-data";
+import ProfilePosts, {
+  type ProfilePostsSetters,
+  type ProfileTab,
+} from "./Posts/ProfilePosts";
+
 import { usePostInteractions } from "@/app/hooks/posts/use-post-interactions";
 import { useProfileActions } from "@/app/hooks/posts/use-profile-actions";
 import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
 
-import { formatCount, formatDate } from "@/backend/lib/post-card-utils";
-import { FollowPreview } from "@/types/follow";
+import {
+  formatCount,
+  formatDate,
+} from "@/backend/lib/post-card-utils";
+
+import type { FollowPreview } from "@/types/follow";
 import type { PostType } from "@/types/post";
 import type { UserType } from "@/types/user";
-import PostTimestamp from "../Posts/PostTimestamp";
+import type { SetStateAction } from "react";
 
-type ProfileTab = "posts" | "saved" | "liked";
+import PostTimestamp from "@/app/components/PostCard/PostTimestamp";
 
 interface ProfileCanvasProps {
   user: UserType;
@@ -63,32 +64,14 @@ interface ProfileCanvasProps {
   followingPreviews: FollowPreview[];
 }
 
-function toPostType(post: PostType): PostType {
-  return {
-    _id: post._id,
-    postUrl: post.postUrl,
-    postType: post.postType,
-    caption: post.caption,
-    createdAt: post.createdAt,
-    likesCount: post.likesCount,
-    commentsCount: post.commentsCount,
-    isLiked: post.isLiked,
-    author: {
-      _id: post.author._id,
-      username: post.author.username,
-      imageUrl: post.author.imageUrl,
-    },
-  };
-}
-
-function ProfileCanvas({
+function ProfileCanvasContent({
   user,
   isOwner,
   onEditProfile,
   onSignOut,
   onDeleteAccount,
   followerPreviews,
-  followingPreviews
+  followingPreviews,
 }: ProfileCanvasProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -96,7 +79,6 @@ function ProfileCanvas({
 
   const [tab, setTab] = useState<ProfileTab>("posts");
 
-  // Follow counts displayed in the profile header.
   const [profileFollowers, setProfileFollowers] = useState(
     user.followers ?? 0
   );
@@ -105,9 +87,16 @@ function ProfileCanvas({
     user.following ?? 0
   );
 
-  // Post modal and profile UI state.
-  const [totalPosts, setTotalPosts] = useState(user.totalPosts ?? 0);
-  const [selectedPost, setSelectedPost] = useState<PostType | null>(null);
+  const [totalPosts, setTotalPosts] = useState(
+    user.totalPosts ?? 0
+  );
+
+  const [posts, setPostsSnapshot] = useState<PostType[]>([]);
+  const [likedPosts, setLikedPostsSnapshot] = useState<PostType[]>([]);
+
+  const [selectedPost, setSelectedPost] =
+    useState<PostType | null>(null);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [commentsModalOpen, setCommentsModalOpen] = useState(false);
@@ -116,105 +105,81 @@ function ProfileCanvas({
     null
   );
 
-  // URL synchronization refs.
   const openedFromClickRef = useRef<string | null>(null);
-
   const previousPostIdRef = useRef<string | null>(postId);
 
-  const profileKey = isOwner ? user._id : user.username;
+  // The actual SWR setters live inside ProfilePosts.
+  // This ref gives the parent access to those setters.
+  const postSettersRef = useRef<ProfilePostsSetters | null>(null);
 
-  // --------------------------------------------------
-  // Pagination hooks
-  // --------------------------------------------------
+  // ---------------------------------------
+  // Posts data bridge
+  // ---------------------------------------
 
+  const handlePostsChange = useCallback((nextPosts: PostType[]) => {
+    setPostsSnapshot(nextPosts);
+  }, []);
 
-  const fetchProfilePostsPage = useCallback(
-    async (
-      cursor: string | null
-    ): Promise<PaginatedResponse<PostType>> => {
-      const { data } = await axios.get("/api/posts/get_posts", {
-        params: {
-          ...(!isOwner ? { username: user.username } : {}),
-          ...(cursor ? { cursor } : {}),
-        },
-        withCredentials: true,
-      });
-
-      return {
-        success: data.success,
-        items: data.posts ?? [],
-        pagination: data.pagination,
-        error: data.error,
-        message: data.message,
-      };
-    },
-    [isOwner, user.username]
-  );
-  // when profile user changes
-  useEffect(() => {
-    setTotalPosts(user.totalPosts ?? 0);
-  }, [user._id, user.totalPosts]);
-  const fetchLikedPostsPage = useCallback(
-    async (
-      cursor: string | null
-    ): Promise<PaginatedResponse<PostType>> => {
-      const { data } = await axios.get("/api/posts/liked", {
-        params: cursor ? { cursor } : {},
-        withCredentials: true,
-      });
-
-      return {
-        success: data.success,
-        items: data.posts ?? [],
-        pagination: data.pagination,
-        error: data.error,
-        message: data.message,
-      };
+  const handleLikedPostsChange = useCallback(
+    (nextPosts: PostType[]) => {
+      setLikedPostsSnapshot(nextPosts);
     },
     []
   );
 
-  const profilePagination = usePaginatedData(
-    fetchProfilePostsPage,
-    (post) => post._id
+  const handlePostSettersReady = useCallback(
+    (setters: ProfilePostsSetters | null) => {
+      postSettersRef.current = setters;
+    },
+    []
   );
 
-  const likedPagination = usePaginatedData(
-    fetchLikedPostsPage,
-    (post) => post._id
+  const setPosts = useCallback(
+    (updater: SetStateAction<PostType[]>) => {
+      postSettersRef.current?.setPosts(updater);
+    },
+    []
   );
 
-  // Profile posts pagination state.
-  const {
-    items: posts,
-    setItems: setPosts,
-    isLoading,
-    isLoadingMore: isLoadingMorePosts,
-    hasMore: hasMorePosts,
-    nextCursor: nextPostsCursor,
-    error: errorMessage,
-    fetchFirstPage: fetchPosts,
-    loadMore: loadMorePosts,
-    reset: resetPosts,
-  } = profilePagination;
+  const setLikedPosts = useCallback(
+    (updater: SetStateAction<PostType[]>) => {
+      postSettersRef.current?.setLikedPosts(updater);
+    },
+    []
+  );
 
-  // Liked posts pagination state.
-  const {
-    items: likedPosts,
-    setItems: setLikedPosts,
-    isLoading: isLoadingLikedPosts,
-    isLoadingMore: isLoadingMoreLikedPosts,
-    hasMore: hasMoreLikedPosts,
-    nextCursor: nextLikedCursor,
-    error: likedError,
-    fetchFirstPage: fetchLikedPosts,
-    loadMore: loadMoreLikedPosts,
-    reset: resetLikedPosts,
-  } = likedPagination;
+  // ---------------------------------------
+  // Profile data synchronization
+  // ---------------------------------------
 
-  // --------------------------------------------------
+  useEffect(() => {
+    setTotalPosts(user.totalPosts ?? 0);
+  }, [user._id, user.totalPosts]);
+
+  useEffect(() => {
+    setProfileFollowers(user.followers ?? 0);
+    setProfileFollowing(user.following ?? 0);
+  }, [user._id, user.followers, user.following]);
+
+  // Keep an already-open post synchronized with profile edits.
+  useEffect(() => {
+    setSelectedPost((previousPost) =>
+      previousPost?.author._id === user._id
+        ? {
+            ...previousPost,
+            author: {
+              ...previousPost.author,
+              username: user.username,
+              imageUrl: user.imageUrl,
+            },
+          }
+        : previousPost
+    );
+  }, [user._id, user.username, user.imageUrl]);
+
+  // ---------------------------------------
   // Toast
-  // --------------------------------------------------
+  // ---------------------------------------
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -237,9 +202,9 @@ function ProfileCanvas({
     };
   }, []);
 
-  // --------------------------------------------------
-  // Profile actions hook
-  // --------------------------------------------------
+  // ---------------------------------------
+  // Profile actions
+  // ---------------------------------------
 
   const {
     isDeletingPost,
@@ -260,66 +225,9 @@ function ProfileCanvas({
     showToast,
   });
 
-  // --------------------------------------------------
-  // Profile data synchronization
-  // --------------------------------------------------
-
-  // Keep displayed follow counts synchronized with profile data.
-  useEffect(() => {
-    setProfileFollowers(user.followers ?? 0);
-    setProfileFollowing(user.following ?? 0);
-  }, [user._id, user.followers, user.following]);
-
-  // Update author details in already-loaded posts when profile
-  // information changes.
-  useEffect(() => {
-    setPosts((previousPosts) =>
-      previousPosts.map((post) =>
-        post.author._id === user._id
-          ? {
-            ...post,
-            author: {
-              ...post.author,
-              username: user.username,
-              imageUrl: user.imageUrl,
-            },
-          }
-          : post
-      )
-    );
-
-    setLikedPosts((previousPosts) =>
-      previousPosts.map((post) =>
-        post.author._id === user._id
-          ? {
-            ...post,
-            author: {
-              ...post.author,
-              username: user.username,
-              imageUrl: user.imageUrl,
-            },
-          }
-          : post
-      )
-    );
-
-    setSelectedPost((previousPost) =>
-      previousPost && previousPost.author._id === user._id
-        ? {
-          ...previousPost,
-          author: {
-            ...previousPost.author,
-            username: user.username,
-            imageUrl: user.imageUrl,
-          },
-        }
-        : previousPost
-    );
-  }, [user._id, user.username, user.imageUrl, setPosts, setLikedPosts]);
-
-  // --------------------------------------------------
-  // Post count synchronization
-  // --------------------------------------------------
+  // ---------------------------------------
+  // Post counts synchronization
+  // ---------------------------------------
 
   const handleCountsChange = useCallback(
     (
@@ -361,9 +269,9 @@ function ProfileCanvas({
     [setPosts, setLikedPosts]
   );
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Post interactions
-  // --------------------------------------------------
+  // ---------------------------------------
 
   const {
     liked,
@@ -387,13 +295,8 @@ function ProfileCanvas({
     handleLike,
     handleCommentDeleted,
   } = usePostInteractions({
-    post: selectedPost
-      ? {
-        _id: selectedPost._id,
-        isLiked: selectedPost.isLiked,
-        likesCount: selectedPost.likesCount,
-        commentsCount: selectedPost.commentsCount,
-      }
+    post: selectedPost?
+    selectedPost
       : null,
     onCountsChange: handleCountsChange,
   });
@@ -416,31 +319,19 @@ function ProfileCanvas({
     onShareError: () => showToast("Unable to share this post."),
   });
 
-  // --------------------------------------------------
-  // Profile and liked posts fetching
-  // --------------------------------------------------
+  // ---------------------------------------
+  // Reset tab when profile changes
+  // ---------------------------------------
 
-  // Reset profile data when switching profiles.
+  const profileKey = isOwner ? user._id : user.username;
+
   useEffect(() => {
-    resetPosts();
-    resetLikedPosts();
-
     setTab("posts");
+  }, [profileKey]);
 
-    void fetchPosts();
-  }, [profileKey, resetPosts, resetLikedPosts, fetchPosts]);
-
-  // Fetch liked posts when the owner selects the Liked tab.
-  useEffect(() => {
-    if (tab !== "liked" || !isOwner) return;
-
-    resetLikedPosts();
-    void fetchLikedPosts();
-  }, [tab, isOwner, resetLikedPosts, fetchLikedPosts]);
-
-  // ------Open post-----
+  // ---------------------------------------
   // Open post
-  // --------------------------------------------------
+  // ---------------------------------------
 
   const openPost = useCallback(
     (post: PostType) => {
@@ -461,9 +352,9 @@ function ProfileCanvas({
     [router, searchParams, setSubmitError]
   );
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Post URL synchronization
-  // --------------------------------------------------
+  // ---------------------------------------
 
   useEffect(() => {
     const previousPostId = previousPostIdRef.current;
@@ -542,9 +433,9 @@ function ProfileCanvas({
     user.username,
   ]);
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Close post
-  // --------------------------------------------------
+  // ---------------------------------------
 
   const closePost = useCallback(() => {
     if (isSubmittingComment || isDeletingPost) return;
@@ -572,9 +463,9 @@ function ProfileCanvas({
     router,
   ]);
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Comments
-  // --------------------------------------------------
+  // ---------------------------------------
 
   const openComments = useCallback(() => {
     if (!selectedPost) return;
@@ -586,9 +477,9 @@ function ProfileCanvas({
     }
   }, [selectedPost, comments.length, fetchComments]);
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Modal keyboard and scroll behavior
-  // --------------------------------------------------
+  // ---------------------------------------
 
   useEffect(() => {
     if (!selectedPost) return;
@@ -620,10 +511,9 @@ function ProfileCanvas({
     closePost,
   ]);
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Copy profile link
-  // --------------------------------------------------
-
+  // ---------------------------------------
 
   const copyProfileLink = async () => {
     try {
@@ -643,38 +533,30 @@ function ProfileCanvas({
     }
   };
 
-
-  // --------------------------------------------------
-  // Derived UI values
-  // --------------------------------------------------
-
-  const visiblePosts = tab === "liked" ? likedPosts : posts;
-
-  const activeIsLoading =
-    tab === "liked" ? isLoadingLikedPosts : isLoading;
-
-  const activeError =
-    tab === "liked" ? likedError : errorMessage;
+  // ---------------------------------------
+  // Profile tabs
+  // ---------------------------------------
 
   const profileTabs: {
     id: ProfileTab;
     label: string;
     Icon: typeof Grid2X2;
   }[] = isOwner
-      ? [
+    ? [
         { id: "posts", label: "Posts", Icon: Grid2X2 },
         { id: "saved", label: "Saved", Icon: Bookmark },
         { id: "liked", label: "Liked", Icon: Heart },
       ]
-      : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
+    : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
 
-  // --------------------------------------------------
+  // ---------------------------------------
   // Render
-  // --------------------------------------------------
+  // ---------------------------------------
 
   return (
     <section className="w-full min-w-0 pb-10 text-on-surface">
       <main className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
+        {/* Profile header */}
         <header className="flex min-w-0 flex-col gap-6 border-b border-outline-variant/25 py-6 sm:py-8 md:flex-row md:items-start md:gap-8 lg:gap-10">
           <Image
             src={user.imageUrl || "/placeholder-user.jpg"}
@@ -780,7 +662,7 @@ function ProfileCanvas({
               </div>
             </div>
 
-            {/* Followers and following counts */}
+            {/* Profile counts */}
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 sm:justify-start sm:gap-x-10">
               <button
                 type="button"
@@ -790,6 +672,7 @@ function ProfileCanvas({
                 <span className="font-semibold">
                   {formatCount(totalPosts)}
                 </span>
+
                 <span className="ml-1.5 text-sm text-outline">
                   posts
                 </span>
@@ -821,10 +704,11 @@ function ProfileCanvas({
               type="button"
               onClick={() => setTab(id)}
               aria-current={tab === id ? "page" : undefined}
-              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${tab === id
-                ? "text-on-surface"
-                : "text-outline hover:text-on-surface"
-                }`}
+              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${
+                tab === id
+                  ? "text-on-surface"
+                  : "text-outline hover:text-on-surface"
+              }`}
             >
               <TabIcon
                 size={17}
@@ -840,7 +724,7 @@ function ProfileCanvas({
           ))}
         </nav>
 
-        {/* Saved tab */}
+        {/* Saved tab or paginated posts */}
         {tab === "saved" ? (
           <div className="mx-auto flex max-w-sm flex-col items-center gap-4 px-5 py-20 text-center">
             <Bookmark size={35} className="text-outline" />
@@ -853,144 +737,17 @@ function ProfileCanvas({
               Connect your saved-posts API to display your saved posts here.
             </p>
           </div>
-        ) : activeIsLoading ? (
-          /* Loading skeleton */
-          <div className="grid min-w-0 grid-cols-2 gap-1.5 pt-5 sm:gap-3 md:grid-cols-3 md:gap-5">
-            {Array.from({ length: 6 }, (_, index) => (
-              <div
-                key={index}
-                className="aspect-square animate-pulse rounded-lg bg-surface-container-high"
-              />
-            ))}
-          </div>
-        ) : activeError ? (
-          /* Error state */
-          <div className="flex flex-col items-center gap-4 px-5 py-20 text-center">
-            <p className="max-w-md text-sm text-outline">
-              {activeError}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (tab === "liked") {
-                  void fetchLikedPosts();
-                } else {
-                  void fetchPosts();
-                }
-              }}
-              className="rounded-full border border-outline-variant/40 px-5 py-2.5 text-sm hover:bg-surface-container-high"
-            >
-              Try again
-            </button>
-          </div>
-        ) : tab === "liked" && visiblePosts.length === 0 ? (
-          /* Empty liked posts */
-          <div className="flex flex-col items-center gap-3 px-5 py-20 text-center">
-            <Heart size={34} className="text-outline" />
-
-            <h2 className="text-xl font-semibold">
-              No liked posts
-            </h2>
-
-            <p className="max-w-sm text-sm text-outline">
-              Posts you like will appear here, including posts shared by
-              other users.
-            </p>
-          </div>
-        ) : posts.length === 0 && tab === "posts" ? (
-          /* Empty profile posts */
-          <div className="flex flex-col items-center gap-4 px-5 py-20 text-center">
-            <Camera size={36} className="text-outline" />
-
-            <h2 className="text-xl font-semibold">
-              No posts yet
-            </h2>
-
-            <p className="max-w-sm text-sm leading-relaxed text-outline">
-              Your published posts will appear here.
-            </p>
-
-            {isOwner && (
-              <Link
-                href="/upload"
-                className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-              >
-                Create a post
-              </Link>
-            )}
-          </div>
         ) : (
-          /* Posts grid */
-          <div className="space-y-6 pt-4 sm:pt-6">
-            <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-3 md:gap-5">
-              {visiblePosts.map((post) => (
-                <PostCard
-                  key={post._id}
-                  post={toPostType(post)}
-                  variant="profile"
-                  onOpenPost={(openedPost: PostType) => {
-                    const fullPost =
-                      likedPosts.find(
-                        (item) => item._id === openedPost._id
-                      ) ??
-                      posts.find(
-                        (item) => item._id === openedPost._id
-                      );
-
-                    if (fullPost) {
-                      openPost(fullPost);
-                    }
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Load more */}
-            {(tab === "posts"
-              ? hasMorePosts
-              : hasMoreLikedPosts) && (
-                <div className="flex justify-center py-4">
-                  <button
-                    type="button"
-                    disabled={
-                      tab === "liked"
-                        ? isLoadingMoreLikedPosts || !nextLikedCursor
-                        : isLoadingMorePosts || !nextPostsCursor
-                    }
-                    onClick={() => {
-                      if (tab === "liked") {
-                        void loadMoreLikedPosts();
-                      } else {
-                        void loadMorePosts();
-                      }
-                    }}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-outline-variant/40 px-5 py-2.5 text-sm transition hover:bg-surface-container-high disabled:opacity-50"
-                  >
-                    {(tab === "liked"
-                      ? isLoadingMoreLikedPosts
-                      : isLoadingMorePosts) && (
-                        <LoaderCircle
-                          size={16}
-                          className="animate-spin"
-                        />
-                      )}
-
-                    {(tab === "liked"
-                      ? isLoadingMoreLikedPosts
-                      : isLoadingMorePosts)
-                      ? "Loading posts..."
-                      : "Load more"}
-
-                    {!(
-                      tab === "liked"
-                        ? isLoadingMoreLikedPosts
-                        : isLoadingMorePosts
-                    ) && <ChevronDown size={16} />}
-                  </button>
-                </div>
-              )}
-          </div>
+          <ProfilePosts
+            key={user._id}
+            user={user}
+            isOwner={isOwner}
+            tab={tab}
+            onPostsChange={handlePostsChange}
+            onLikedPostsChange={handleLikedPostsChange}
+            onSettersReady={handlePostSettersReady}
+            onOpenPost={openPost}
+          />
         )}
       </main>
 
@@ -1164,10 +921,11 @@ function ProfileCanvas({
                       disabled={isLiking}
                       aria-label={liked ? "Unlike post" : "Like post"}
                       aria-pressed={liked}
-                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${liked
-                        ? "text-rose-500"
-                        : "text-on-surface hover:text-rose-500"
-                        }`}
+                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${
+                        liked
+                          ? "text-rose-500"
+                          : "text-on-surface hover:text-rose-500"
+                      }`}
                     >
                       <Heart
                         size={22}
@@ -1257,10 +1015,11 @@ function ProfileCanvas({
       {/* Toast */}
       <div
         aria-live="polite"
-        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${toast
-          ? "translate-y-0 opacity-100"
-          : "pointer-events-none translate-y-3 opacity-0"
-          }`}
+        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${
+          toast
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0"
+        }`}
       >
         {toast}
       </div>
@@ -1268,4 +1027,4 @@ function ProfileCanvas({
   );
 }
 
-export default memo(ProfileCanvas);
+export default memo(ProfileCanvasContent);

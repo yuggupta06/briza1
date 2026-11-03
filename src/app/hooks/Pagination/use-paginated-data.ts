@@ -2,7 +2,8 @@
 "use client";
 
 import axios from "axios";
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import useSWRInfinite from "swr/infinite";
 import type { SetStateAction } from "react";
 
 export interface PaginatedResponse<T> {
@@ -19,49 +20,6 @@ export interface PaginatedResponse<T> {
 type FetchPage<T> = (
   cursor: string | null
 ) => Promise<PaginatedResponse<T>>;
-
-interface PaginatedState<T> {
-  items: T[];
-  isLoading: boolean;
-  isLoadingMore: boolean;
-  hasMore: boolean;
-  nextCursor: string | null;
-  error: string;
-}
-
-type Action<T> =
-  | { type: "first-page-start" }
-  | {
-      type: "first-page-success";
-      items: T[];
-      hasMore: boolean;
-      nextCursor: string | null;
-    }
-  | { type: "first-page-error"; error: string }
-  | { type: "load-more-start" }
-  | {
-      type: "load-more-success";
-      items: T[];
-      hasMore: boolean;
-      nextCursor: string | null;
-    }
-  | { type: "load-more-error"; error: string }
-  | {
-      type: "set-items";
-      updater: SetStateAction<T[]>;
-    }
-  | { type: "reset" };
-
-function createInitialState<T>(): PaginatedState<T> {
-  return {
-    items: [],
-    isLoading: true,
-    isLoadingMore: false,
-    hasMore: false,
-    nextCursor: null,
-    error: "",
-  };
-}
 
 function getErrorMessage(
   error: unknown,
@@ -80,214 +38,231 @@ function getErrorMessage(
     : fallback;
 }
 
-function reducer<T>(
-  state: PaginatedState<T>,
-  action: Action<T>
-): PaginatedState<T> {
-  switch (action.type) {
-    case "first-page-start":
-      return {
-        ...state,
-        isLoading: true,
-        isLoadingMore: false,
-        error: "",
-      };
-
-    case "first-page-success":
-      return {
-        ...state,
-        items: action.items,
-        isLoading: false,
-        isLoadingMore: false,
-        hasMore: action.hasMore,
-        nextCursor: action.nextCursor,
-        error: "",
-      };
-
-    case "first-page-error":
-      return {
-        ...state,
-        isLoading: false,
-        isLoadingMore: false,
-        error: action.error,
-      };
-
-    case "load-more-start":
-      return {
-        ...state,
-        isLoadingMore: true,
-        error: "",
-      };
-
-    case "load-more-success": {
-      return {
-        ...state,
-        items: [
-          ...state.items,
-          ...action.items,
-        ],
-        isLoadingMore: false,
-        hasMore: action.hasMore,
-        nextCursor: action.nextCursor,
-        error: "",
-      };
-    }
-
-    case "load-more-error":
-      return {
-        ...state,
-        isLoadingMore: false,
-        error: action.error,
-      };
-
-    case "set-items":
-      return {
-        ...state,
-        items:
-          typeof action.updater === "function"
-            ? action.updater(state.items)
-            : action.updater,
-      };
-
-    case "reset":
-      return createInitialState<T>();
-
-    default:
-      return state;
-  }
-}
-
 export function usePaginatedData<T>(
   fetchPage: FetchPage<T>,
-  getId: (item: T) => string
+  getId: (item: T) => string,
+  cacheKey: string,
+  enabled=true
 ) {
-  const [state, dispatch] = useReducer(
-    reducer<T>,
-    undefined,
-    createInitialState<T>
-  );
-
-  const requestIdRef = useRef(0);
   const requestInProgressRef = useRef(false);
 
-  const setItems = useCallback(
-    (updater: SetStateAction<T[]>) => {
-      dispatch({ type: "set-items", updater });
-    },
-    []
-  );
+  // Generate cursor-based SWR keys.
+  const getKey = useCallback(
+  (
+    pageIndex: number,
+    previousPageData: PaginatedResponse<T> | null
+  ) => {
+    if (!enabled) return null;
 
-  const reset = useCallback(() => {
-    requestIdRef.current += 1;
-    requestInProgressRef.current = false;
-    dispatch({ type: "reset" });
-  }, []);
+    if (pageIndex === 0) {
+      return [cacheKey, null] as const;
+    }
 
-  const fetchFirstPage = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
+    if (
+      !previousPageData ||
+      !previousPageData.pagination.hasMore ||
+      !previousPageData.pagination.nextCursor
+    ) {
+      return null;
+    }
 
-    requestInProgressRef.current = true;
-    dispatch({ type: "first-page-start" });
+    return [
+      cacheKey,
+      previousPageData.pagination.nextCursor,
+    ] as const;
+  },
+  [cacheKey, enabled]
+);
 
-    try {
-      const data = await fetchPage(null);
+  // Fetch and validate each page.
+  const fetcher = useCallback(
+    async ([, cursor]: [string, string | null]) => {
 
-      if (requestId !== requestIdRef.current) return;
+    const data = await fetchPage(cursor);
+
+
 
       if (!data.success || !data.pagination) {
         throw new Error(
-          data.error || data.message ||
-          "Invalid response."
+          data.error ||
+            data.message ||
+            "Invalid response."
         );
       }
 
-      dispatch({
-        type: "first-page-success",
-        items: data.items,
-        hasMore: data.pagination.hasMore,
-        nextCursor: data.pagination.nextCursor,
-      });
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return;
+      return data;
+    },
+    [fetchPage]
+  );
 
-      dispatch({
-        type: "first-page-error",
-        error: getErrorMessage(
-          error,
-          "Unable to load data."
-        ),
-      });
-    } finally {
-      if (requestId === requestIdRef.current) {
-        requestInProgressRef.current = false;
-      }
-    }
-  }, [fetchPage]);
+ const {
+  data,
+  error: swrError,
+  size,
+  setSize,
+  mutate,
+  isValidating,
+  isLoading: swrIsLoading,
+} = useSWRInfinite<PaginatedResponse<T>, Error>(
+  getKey,
+  fetcher,
+  {
+    initialSize: 1,
+    persistSize: true,
 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+
+    revalidateFirstPage: false,
+    revalidateAll: false,
+
+    dedupingInterval: 2000,
+  }
+);
+
+
+  // Combine all cached pages into one array.
+  const items = useMemo(() => {
+  const allItems = data?.flatMap((page) => page.items ?? []) ?? [];
+
+ 
+
+  const uniqueItems = new Map<string, T>();
+
+  allItems.forEach((item) => {
+    uniqueItems.set(getId(item), item);
+  });
+
+  console.log("[Pagination] FINAL ITEMS:", uniqueItems.size);
+
+  return Array.from(uniqueItems.values());
+}, [data, getId]);
+
+  const lastPage = data?.[data.length - 1];
+
+  const hasMore = lastPage?.pagination.hasMore ?? false;
+
+  const nextCursor =
+    lastPage?.pagination.nextCursor ?? null;
+
+  const isLoading = enabled && swrIsLoading;
+
+  const isLoadingMore =
+    isValidating && size > (data?.length ?? 0);
+
+  // Load the next page.
   const loadMore = useCallback(async () => {
-    const cursor = state.nextCursor;
-
     if (
       requestInProgressRef.current ||
-      !state.hasMore ||
-      !cursor
+      !hasMore ||
+      !nextCursor ||
+      isValidating
     ) {
       return;
     }
 
-    const requestId = requestIdRef.current;
-
     requestInProgressRef.current = true;
-    dispatch({ type: "load-more-start" });
 
     try {
-      const data = await fetchPage(cursor);
-
-      if (requestId !== requestIdRef.current) return;
-
-      if (!data.success || !data.pagination) {
-        throw new Error(
-          data.error || data.message ||
-          "Invalid response."
-        );
+      // Retry a failed page if size already exceeds
+      // the number of successfully fetched pages.
+      if (size > (data?.length ?? 0)) {
+        await setSize(size);
+      } else {
+        await setSize(size + 1);
       }
-
-      dispatch({
-        type: "load-more-success",
-        items: data.items.filter(
-          (item) =>
-            !state.items.some(
-              (existing) => getId(existing) === getId(item)
-            )
-        ),
-        hasMore: data.pagination.hasMore,
-        nextCursor: data.pagination.nextCursor,
-      });
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return;
-
-      dispatch({
-        type: "load-more-error",
-        error: getErrorMessage(
-          error,
-          "Unable to load more data."
-        ),
-      });
     } finally {
-      if (requestId === requestIdRef.current) {
-        requestInProgressRef.current = false;
-      }
+      requestInProgressRef.current = false;
     }
   }, [
-    fetchPage,
-    state.hasMore,
-    state.nextCursor,
-    state.items,
-    getId,
+    hasMore,
+    nextCursor,
+    isValidating,
+    size,
+    data,
+    setSize,
   ]);
 
+  // Update cached items optimistically.
+  const setItems = useCallback(
+    (updater: SetStateAction<T[]>) => {
+      void mutate(
+        (pages) => {
+          if (!pages?.length) return pages;
+
+          const currentItems = pages.flatMap(
+            (page) => page.items
+          );
+
+          const nextItems =
+            typeof updater === "function"
+              ? (updater as (previous: T[]) => T[])(
+                  currentItems
+                )
+              : updater;
+
+          // Preserve the original page distribution.
+          let itemIndex = 0;
+
+          return pages.map((page, index) => {
+            const remaining = nextItems.length - itemIndex;
+
+            const count =
+              index === pages.length - 1
+                ? remaining
+                : Math.min(
+                    page.items.length,
+                    remaining
+                  );
+
+            const pageItems = nextItems.slice(
+              itemIndex,
+              itemIndex + Math.max(0, count)
+            );
+
+            itemIndex += Math.max(0, count);
+
+            return {
+              ...page,
+              items: pageItems,
+            };
+          });
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
+
+  // Manually refresh cached pages.
+  const fetchFirstPage = useCallback(async () => {
+    await mutate();
+  }, [mutate]);
+
+  // Explicitly clear the current dataset.
+  const reset = useCallback(async () => {
+    requestInProgressRef.current = false;
+
+    await mutate(undefined, {
+      revalidate: false,
+    });
+
+    await setSize(1);
+  }, [mutate, setSize]);
+
   return {
-    ...state,
+    items,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    nextCursor,
+    error: swrError
+      ? getErrorMessage(
+          swrError,
+          "Unable to load data."
+        )
+      : "",
     setItems,
     reset,
     fetchFirstPage,

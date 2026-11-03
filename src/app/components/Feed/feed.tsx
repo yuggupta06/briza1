@@ -1,14 +1,14 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
 import axios from "axios";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import useSWRInfinite from "swr/infinite";
 
 import Loading from "@/app/components/Loading/loading";
 import type { PostType } from "@/types/post";
 
-import PostCard from "../Posts/post-card";
+import PostCard from "../PostCard/post-card";
 
 type FeedResponse = {
   success: boolean;
@@ -166,7 +166,7 @@ export default function ImagesFeed() {
 
   return (
     <section
-     data-feed-container
+      data-feed-container
       aria-label="Posts feed"
       className="flex w-full flex-col gap-8"
     >
