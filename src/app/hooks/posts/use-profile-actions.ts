@@ -107,6 +107,7 @@ export function useProfileActions({
       currentPosts.filter((post) => post._id !== deletedId)
     );
 
+    
     setLikedPosts((currentLikedPosts) =>
       currentLikedPosts.filter((post) => post._id !== deletedId)
     );
@@ -161,6 +162,7 @@ export function useProfileActions({
           },
           { revalidate: false }
         );
+        
       }
 
     } catch (error) {

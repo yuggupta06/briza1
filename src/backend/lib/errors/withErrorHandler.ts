@@ -1,16 +1,20 @@
+
+
 import { NextRequest, NextResponse } from "next/server";
 import { errorHandler } from "./errorHandler";
 
-type ApiHandler = (
-  request: NextRequest
-) => Promise<NextResponse>;
-
-export function withErrorHandler(
-  handler: ApiHandler
-): ApiHandler {
-  return async (request: NextRequest) => {
+export function withErrorHandler<TArgs extends unknown[]>(
+  handler: (
+    request: NextRequest,
+    ...args: TArgs
+  ) => Promise<NextResponse>
+) {
+  return async (
+    request: NextRequest,
+    ...args: TArgs
+  ): Promise<NextResponse> => {
     try {
-      return await handler(request);
+      return await handler(request, ...args);
     } catch (error: unknown) {
       return errorHandler(error);
     }

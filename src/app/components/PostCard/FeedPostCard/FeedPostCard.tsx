@@ -20,7 +20,7 @@ import { usePostInteractions } from "@/app/hooks/posts/use-post-interactions";
 import { useSharePost } from "@/app/hooks/posts/use-share-post";
 import { useMediaDoubleClick } from "@/app/hooks/useMediaDoubleClick";
 import { usePauseVideoWhenOutOfView } from "@/app/hooks/usePauseVideoWhenOutOfView";
-import { useRealtime } from "@/app/providers/RealtimeProvider";
+// import { useRealtime } from "@/app/providers/RealtimeProvider";
 
 import CommentsModalComponent from "@/app/components/Comment/CommentsModal";
 import type { PostType } from "@/types/post";
@@ -77,16 +77,16 @@ function FeedPostCard({ post }: { post: PostType }) {
   });
 
   const videoRef = usePauseVideoWhenOutOfView(post.postUrl);
-  const { subscribeToPost } = useRealtime();
+  // const { subscribeToPost } = useRealtime();
 
   // Keep the post subscription active even while the comments modal is closed.
-  useEffect(() => {
-    if (!post._id) return;
+  // useEffect(() => {
+  //   if (!post._id) return;
 
-    return subscribeToPost(post._id, "new-comment", ({ comment }) => {
-      handleNewComment(comment);
-    });
-  }, [post._id, subscribeToPost, handleNewComment]);
+  //   return subscribeToPost(post._id, "new-comment", ({ comment }) => {
+  //     handleNewComment(comment);
+  //   });
+  // }, [post._id, subscribeToPost, handleNewComment]);
 
   const openComments = useCallback(() => {
     if (commentsOpen) return;

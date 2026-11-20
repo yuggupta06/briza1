@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   MessageCircle,
   MoreHorizontal,
+
   Send,
   Share2,
   Trash2,
@@ -90,7 +91,9 @@ function ProfileCanvasContent({
   const [totalPosts, setTotalPosts] = useState(
     user.totalPosts ?? 0
   );
-
+  // for conversations
+  const [isStartingConversation, setIsStartingConversation] =
+    useState(false);
   const [posts, setPostsSnapshot] = useState<PostType[]>([]);
   const [likedPosts, setLikedPostsSnapshot] = useState<PostType[]>([]);
 
@@ -166,13 +169,13 @@ function ProfileCanvasContent({
     setSelectedPost((previousPost) =>
       previousPost?.author._id === user._id
         ? {
-            ...previousPost,
-            author: {
-              ...previousPost.author,
-              username: user.username,
-              imageUrl: user.imageUrl,
-            },
-          }
+          ...previousPost,
+          author: {
+            ...previousPost.author,
+            username: user.username,
+            imageUrl: user.imageUrl,
+          },
+        }
         : previousPost
     );
   }, [user._id, user.username, user.imageUrl]);
@@ -295,8 +298,8 @@ function ProfileCanvasContent({
     handleLike,
     handleCommentDeleted,
   } = usePostInteractions({
-    post: selectedPost?
-    selectedPost
+    post: selectedPost ?
+      selectedPost
       : null,
     onCountsChange: handleCountsChange,
   });
@@ -532,6 +535,29 @@ function ProfileCanvasContent({
       setMenuOpen(false);
     }
   };
+  const handleMessage = async () => {
+    if (isOwner || isStartingConversation) return;
+
+    try {
+      setIsStartingConversation(true);
+
+      const response = await axios.post("/api/conversation/create", {
+        recipientId: user._id,
+      });
+
+      const conversationId =
+        response.data.conversation._id.toString();
+
+      router.push(
+        `/messages?conversation=${conversationId}`
+      );
+    } catch (error) {
+      console.error("Unable to start conversation:", error);
+      showToast("Unable to open conversation.");
+    } finally {
+      setIsStartingConversation(false);
+    }
+  };
 
   // ---------------------------------------
   // Profile tabs
@@ -542,12 +568,12 @@ function ProfileCanvasContent({
     label: string;
     Icon: typeof Grid2X2;
   }[] = isOwner
-    ? [
+      ? [
         { id: "posts", label: "Posts", Icon: Grid2X2 },
         { id: "saved", label: "Saved", Icon: Bookmark },
         { id: "liked", label: "Liked", Icon: Heart },
       ]
-    : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
+      : [{ id: "posts", label: "Posts", Icon: Grid2X2 }];
 
   // ---------------------------------------
   // Render
@@ -589,12 +615,29 @@ function ProfileCanvasContent({
                     Edit Profile
                   </button>
                 ) : (
-                  <FollowButton
-                    targetUserId={user._id}
-                    onFollowChange={({ followers }) => {
-                      setProfileFollowers(followers);
-                    }}
-                  />
+                  <>
+                    <FollowButton
+                      targetUserId={user._id}
+                      onFollowChange={({ followers }) => {
+                        setProfileFollowers(followers);
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleMessage}
+                      disabled={isStartingConversation}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-outline-variant/40 bg-surface-container-high px-4 text-sm font-medium transition hover:bg-surface-container-highest disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isStartingConversation ? (
+                        <LoaderCircle size={16} className="animate-spin" />
+                      ) : (
+                        <MessageCircle size={16} />
+                      )}
+
+                      Message
+                    </button>
+                  </>
                 )}
 
                 <button
@@ -704,11 +747,10 @@ function ProfileCanvasContent({
               type="button"
               onClick={() => setTab(id)}
               aria-current={tab === id ? "page" : undefined}
-              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${
-                tab === id
+              className={`relative flex min-h-14 items-center gap-2 px-1 text-xs font-semibold tracking-wide transition sm:min-h-16 cursor-pointer ${tab === id
                   ? "text-on-surface"
                   : "text-outline hover:text-on-surface"
-              }`}
+                }`}
             >
               <TabIcon
                 size={17}
@@ -921,11 +963,10 @@ function ProfileCanvasContent({
                       disabled={isLiking}
                       aria-label={liked ? "Unlike post" : "Like post"}
                       aria-pressed={liked}
-                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${
-                        liked
+                      className={`flex items-center gap-2 text-sm transition disabled:opacity-50 cursor-pointer ${liked
                           ? "text-rose-500"
                           : "text-on-surface hover:text-rose-500"
-                      }`}
+                        }`}
                     >
                       <Heart
                         size={22}
@@ -1015,11 +1056,10 @@ function ProfileCanvasContent({
       {/* Toast */}
       <div
         aria-live="polite"
-        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${
-          toast
+        className={`fixed bottom-5 left-1/2 z-70 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-outline-variant/30 bg-surface-container-high px-4 py-3 text-center text-sm shadow-xl transition-all ${toast
             ? "translate-y-0 opacity-100"
             : "pointer-events-none translate-y-3 opacity-0"
-        }`}
+          }`}
       >
         {toast}
       </div>

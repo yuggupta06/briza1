@@ -1,8 +1,5 @@
-"use client"
 
-export default function MessagesPage(){
-  return (
-    <>
-    </>
-  )
+
+export default function Page() {
+  return <div>Messages</div>;
 }
