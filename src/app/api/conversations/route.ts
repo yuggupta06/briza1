@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -5,6 +6,7 @@ import { Connect } from "@/backend/lib/dbConnect";
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 
+import "@/backend/models/message";
 import User from "@/backend/models/user";
 import Conversation from "@/backend/models/conversation";
 
@@ -63,11 +65,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     .lean();
 
   const currentUserExists = users.some(
-    (user) => user._id.toString() === userId
+    (user) => String(user._id) === userId
   );
 
   const recipientExists = users.some(
-    (user) => user._id.toString() === recipientId
+    (user) => String(user._id) === recipientId
   );
 
   if (!currentUserExists) {
@@ -163,7 +165,6 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   );
 });
 
-
 const PAGE_SIZE = 20;
 
 export const GET = withErrorHandler(async (req: NextRequest) => {
@@ -250,7 +251,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
         $lt: cursorId,
       };
     }
-  } 
+  }
 
   // 6. Fetch one extra conversation to determine hasMore.
   const fetchedConversations = await Conversation.find(filter)
@@ -288,10 +289,18 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
         participant._id.toString() !== userId
     );
 
-    // Find the current user's unread count.
+    // Find the current user's member state.
     const currentMemberState = conversation.memberStates.find(
       (state) => state.userId.toString() === userId
     );
+
+    // Find the other participant's member state.
+    const otherParticipantMemberState =
+      conversation.memberStates.find(
+        (state) =>
+          state.userId.toString() ===
+          otherParticipant?._id.toString()
+      );
 
     return {
       _id: conversation._id,
@@ -299,6 +308,10 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       lastMessage: conversation.lastMessageId ?? null,
       lastMessageAt: conversation.lastMessageAt,
       unreadCount: currentMemberState?.unreadCount ?? 0,
+
+      // Read progress of the other participant.
+      otherParticipantLastReadSeq:
+        otherParticipantMemberState?.lastReadSeq ?? 0,
     };
   });
 
@@ -315,4 +328,3 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     { status: 200 }
   );
 });
-

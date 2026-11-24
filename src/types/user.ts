@@ -1,7 +1,7 @@
-import { Types } from "mongoose";
+
 
 export interface PopulatedUserType {
-  _id: Types.ObjectId;
+  _id: string;
   username: string;
   imageUrl: string;
 }

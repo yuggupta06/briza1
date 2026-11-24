@@ -54,6 +54,7 @@ import type { UserType } from "@/types/user";
 import type { SetStateAction } from "react";
 
 import PostTimestamp from "@/app/components/PostCard/PostTimestamp";
+import { CreateConversationResponse } from "@/types/messaging-ui";
 
 interface ProfileCanvasProps {
   user: UserType;
@@ -535,29 +536,56 @@ function ProfileCanvasContent({
       setMenuOpen(false);
     }
   };
-  const handleMessage = async () => {
-    if (isOwner || isStartingConversation) return;
+ 
+ const handleMessage = useCallback(async () => {
+  if (isOwner || isStartingConversation) return;
 
-    try {
-      setIsStartingConversation(true);
+  setIsStartingConversation(true);
 
-      const response = await axios.post("/api/conversation/create", {
-        recipientId: user._id,
-      });
-
-      const conversationId =
-        response.data.conversation._id.toString();
-
-      router.push(
-        `/messages?conversation=${conversationId}`
+  try {
+    const { data } =
+      await axios.post<CreateConversationResponse>(
+        "/api/conversations",
+        {
+          recipientId: user._id,
+        },
+        {
+          withCredentials: true,
+        }
       );
-    } catch (error) {
-      console.error("Unable to start conversation:", error);
-      showToast("Unable to open conversation.");
-    } finally {
-      setIsStartingConversation(false);
+
+    if (!data.success || !data.conversation?._id) {
+      throw new Error(
+        data.message || "Unable to retrieve conversation."
+      );
     }
-  };
+
+    const conversationId = data.conversation._id;
+
+    router.push(
+      `/messages?conversationId=${encodeURIComponent(conversationId)}`
+    );
+  } catch (error) {
+    console.error("Failed to start conversation:", error);
+
+    const errorMessage = axios.isAxiosError(error)
+      ? error.response?.data?.message
+      : error instanceof Error
+        ? error.message
+        : null;
+
+    showToast(errorMessage || "Unable to start conversation.");
+  } finally {
+    setIsStartingConversation(false);
+  }
+}, [
+  isOwner,
+  isStartingConversation,
+  user._id,
+  router,
+  showToast,
+]);
+
 
   // ---------------------------------------
   // Profile tabs

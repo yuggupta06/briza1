@@ -1,16 +1,13 @@
 
 import { Types } from "mongoose";
 import type { PopulatedUserType } from "./user";
+import type { MessageContentType } from "./messaging-ui";
 
-export type MessageContentType =
-  | "text"
-  | "image"
-  | "video"
-  | "file";
+export type MessageMediaType = "image" | "video" | "file";
 
 export type AttachmentType = {
   url: string;
-  mediaType: "image" | "video" | "file";
+  mediaType: MessageMediaType;
   size: number;
   name: string | null;
 };

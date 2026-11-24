@@ -92,7 +92,15 @@ export const GET = withErrorHandler(
       (state) => state.userId.toString() === userId
     );
 
-    // 8. Return conversation details.
+    // 8. Find the other participant's member state.
+    const otherParticipantMemberState =
+      conversation.memberStates.find(
+        (state) =>
+          state.userId.toString() ===
+          otherParticipant?._id.toString()
+      );
+
+    // 9. Return conversation details.
     return NextResponse.json(
       {
         success: true,
@@ -103,6 +111,10 @@ export const GET = withErrorHandler(
           lastMessageAt: conversation.lastMessageAt,
           lastMessageSeq: conversation.lastMessageSeq,
           unreadCount: currentMemberState?.unreadCount ?? 0,
+
+          // Persisted read progress of the other participant.
+          otherParticipantLastReadSeq:
+            otherParticipantMemberState?.lastReadSeq ?? 0,
         },
       },
       { status: 200 }

@@ -56,7 +56,6 @@ const conversationSchema = new Schema(
     participantKey: {
       type: String,
       required: true,
-      unique: true,
       immutable: true,
     },
 

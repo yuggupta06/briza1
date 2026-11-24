@@ -1,5 +1,8 @@
-
 "use client"
+
+import Link from "next/link";
+import { MessageCircle } from "lucide-react";
+
 import ImagesFeed from "@/app/components/Feed/feed";
 import NotificationBell from "@/app/components/Notifications/NotificationBell";
 import { StoriesStrip } from "@/app/components/Stories/stories-strip";
@@ -8,18 +11,25 @@ import { useFeedScrollRestoration } from "@/app/hooks/scroll-restoration'/useFee
 
 export default function HomePage() {
   const { isRestoring } = useFeedScrollRestoration();
+
   return (
     <VideoPlaybackProvider>
       <main className="mx-auto flex w-full max-w-155 flex-col gap-0 px-4 py-1 pb-24 md:px-0 md:py-6 md:pb-12">
         <h1 className="sr-only">Briza home feed</h1>
 
         {/* Home header */}
-        <header className="sticky top-0 z-40 flex items-center justify-between w-screen sm:w-full  bg-background py-3 px-5">
+        <header className="sticky top-0 z-40 flex items-center justify-between w-screen sm:w-full bg-background py-3 px-7">
           <h2 className="text-xl font-semibold tracking-tight">
             Home
           </h2>
 
-          <NotificationBell />
+          <div className="flex items-center gap-4">
+            <NotificationBell />
+
+            <Link href="/messages" aria-label="Messages">
+              <MessageCircle className="h-6 w-6 cursor-pointer" />
+            </Link>
+          </div>
         </header>
 
         <StoriesStrip />

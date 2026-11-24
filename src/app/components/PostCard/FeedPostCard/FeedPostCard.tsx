@@ -55,7 +55,6 @@ function FeedPostCard({ post }: { post: PostType }) {
     setCommentText,
     setSubmitError,
     fetchComments,
-    handleNewComment,
     loadMoreComments,
     submitComment,
     handleLike,

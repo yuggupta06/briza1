@@ -1,7 +1,5 @@
-
-
 import { Schema, model, models } from "mongoose";
-
+import {MessageType} from "@/types/message";
 const MAX_ATTACHMENTS = 10;
 
 const attachmentSchema = new Schema(
@@ -35,7 +33,7 @@ const attachmentSchema = new Schema(
   }
 );
 
-const messageSchema = new Schema(
+const messageSchema = new Schema<MessageType>(
   {
     conversationId: {
       type: Schema.Types.ObjectId,
@@ -149,6 +147,6 @@ messageSchema.index(
 
 const Message =
   models.Message ||
-  model("Message", messageSchema);
+  model<MessageType>("Message", messageSchema);
 
 export default Message;

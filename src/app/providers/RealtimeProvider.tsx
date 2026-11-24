@@ -12,15 +12,32 @@ import {
 
 import type { Channel } from "pusher-js";
 import type { CommentWithAuthor } from "@/types/comment";
+import type { MessagingMessage } from "@/types/messaging-ui";
 import { pusherClient } from "@/backend/lib/pusher-client";
 import { NotificationType } from "@/types/notification";
 
+type MessageEventPayload = {
+  conversationId: string;
+  message: MessagingMessage;
+   unreadCount?: number;
+};
+
+type MessagesReadPayload = {
+  conversationId: string;
+  readerId: string;
+  lastReadMessageId: string | null;
+  lastReadSeq: number;
+};
+
 type RealtimeEvents = {
+  // User channel events
   "new-notification": {
-    notification:NotificationType
+    notification: NotificationType;
   };
 
-  "new-message": unknown;
+  "new-message-notification": MessageEventPayload;
+
+  "messages-read-notification": MessagesReadPayload;
 
   "new-comment": {
     comment: CommentWithAuthor;
@@ -31,9 +48,26 @@ type RealtimeEvents = {
   };
 
   "new-post": unknown;
+
+  // Conversation channel events
+  "new-message": MessageEventPayload;
+
+  "messages-read": MessagesReadPayload;
 };
 
 type EventName = keyof RealtimeEvents;
+
+type UserEventName =
+  | "new-notification"
+  | "new-message-notification"
+  | "messages-read-notification"
+  | "new-comment"
+  | "new-reply"
+  | "new-post";
+
+type PostEventName = "new-comment" | "new-reply";
+
+type ConversationEventName = "new-message" | "messages-read";
 
 export type EventHandler<E extends EventName> = (
   payload: RealtimeEvents[E]
@@ -42,13 +76,19 @@ export type EventHandler<E extends EventName> = (
 type Listener = (payload: unknown) => void;
 
 type RealtimeContextValue = {
-  subscribe: <E extends EventName>(
+  subscribe: <E extends UserEventName>(
     eventName: E,
     handler: EventHandler<E>
   ) => () => void;
 
-  subscribeToPost: <E extends "new-comment" | "new-reply">(
+  subscribeToPost: <E extends PostEventName>(
     postId: string,
+    eventName: E,
+    handler: EventHandler<E>
+  ) => () => void;
+
+  subscribeToConversation: <E extends ConversationEventName>(
+    conversationId: string,
     eventName: E,
     handler: EventHandler<E>
   ) => () => void;
@@ -59,10 +99,13 @@ const RealtimeContext =
 
 const EVENT_NAMES: EventName[] = [
   "new-notification",
-  "new-message",
+  "new-message-notification",
+  "messages-read-notification",
   "new-comment",
   "new-reply",
   "new-post",
+  "new-message",
+  "messages-read",
 ];
 
 type Props = {
@@ -88,6 +131,7 @@ export function RealtimeProvider({
     if (existing) return existing;
 
     const channel = pusherClient.subscribe(channelName);
+    
     channelsRef.current.set(channelName, channel);
 
     // Bind each Pusher event once for this channel.
@@ -174,9 +218,9 @@ export function RealtimeProvider({
     [ensureChannel, releaseChannelIfUnused]
   );
 
-  // Existing API: listen on the authenticated user's channel.
+  // Listen on the authenticated user's private channel.
   const subscribe = useCallback(
-    <E extends EventName,>(
+    <E extends UserEventName,>(
       eventName: E,
       handler: EventHandler<E>
     ) => {
@@ -191,9 +235,9 @@ export function RealtimeProvider({
     [userId, subscribeToChannel]
   );
 
-  // New API: listen on one particular post's channel.
+  // Listen on one particular post's private channel.
   const subscribeToPost = useCallback(
-    <E extends "new-comment" | "new-reply",>(
+    <E extends PostEventName,>(
       postId: string,
       eventName: E,
       handler: EventHandler<E>
@@ -209,27 +253,50 @@ export function RealtimeProvider({
     [userId, subscribeToChannel]
   );
 
-  // Release any remaining channels when the provider unmounts.
-  useEffect(() => {
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      for (const [channelName, channel] of channelsRef.current) {
-        for (const eventName of EVENT_NAMES) {
-          channel.unbind(eventName);
-        }
+  // Listen on one particular conversation's private channel.
+  const subscribeToConversation = useCallback(
+    <E extends ConversationEventName,>(
+      conversationId: string,
+      eventName: E,
+      handler: EventHandler<E>
+    ) => {
+      if (!userId || !conversationId) return () => {};
 
-        pusherClient.unsubscribe(channelName);
+      return subscribeToChannel(
+        `private-conversation-${conversationId}`,
+        eventName,
+        handler
+      );
+    },
+    [userId, subscribeToChannel]
+  );
+
+  // Release remaining channels when the provider unmounts.
+  useEffect(() => {
+  const channels = channelsRef.current;
+  const listeners = listenersRef.current;
+
+  return () => {
+    for (const [channelName, channel] of channels) {
+      for (const eventName of EVENT_NAMES) {
+        channel.unbind(eventName);
       }
 
-      channelsRef.current.clear();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      listenersRef.current.clear();
-    };
-  }, []);
+      pusherClient.unsubscribe(channelName);
+    }
+
+    channels.clear();
+    listeners.clear();
+  };
+}, []);
 
   return (
     <RealtimeContext.Provider
-      value={{ subscribe, subscribeToPost }}
+      value={{
+        subscribe,
+        subscribeToPost,
+        subscribeToConversation,
+      }}
     >
       {children}
     </RealtimeContext.Provider>

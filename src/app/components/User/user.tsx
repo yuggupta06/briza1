@@ -12,7 +12,7 @@ import type { CloudinaryUploadWidgetResults } from "next-cloudinary";
 import { CldUploadWidget } from "next-cloudinary";
 import Image from "next/image";
 import {
-  SubmitEvent,
+  FormEvent,
   useCallback,
   useState,
 } from "react";
@@ -106,7 +106,7 @@ export default function UserPage() {
   );
 
   const handleSave = useCallback(
-    async (event: SubmitEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       if (!currentUser || isSaving || isUploading) return;

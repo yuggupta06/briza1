@@ -11,13 +11,13 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import type { FormEvent } from "react";
 import {
   memo,
   useCallback,
   useEffect,
   useRef,
-  useState,
-  type SubmitEvent,
+  useState
 } from "react";
 
 import { useCurrentUser } from "@/app/hooks/useCurrentUser";
@@ -92,7 +92,7 @@ function CommentsModalComponent({
   useEffect(() => {
     setMounted(true);
   }, []);
-  
+
   useEffect(() => {
     if (!open) return;
     document.body.style.overflow = "hidden";
@@ -110,7 +110,7 @@ function CommentsModalComponent({
   }, [open, onClose]);
 
   const handleSubmit = useCallback(
-    async (event: SubmitEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       if (commentsLoading || isSubmittingComment) return;
@@ -305,7 +305,7 @@ function CommentsModalComponent({
         </form>
       </section>
     </div>
-    ,document.body
+    , document.body
   );
 }
 interface ThreadProps {
@@ -522,7 +522,7 @@ function CommentThreadComponent({
   );
 
   const handleSubmitReply = useCallback(
-    async (event: SubmitEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       const target = replyingTo;

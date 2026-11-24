@@ -80,7 +80,7 @@ export default function RootLayout({
         <div className="flex min-h-screen w-full justify-center">
           <SideNav />
 
-          <div className="flex w-full justify-center md:pl-64">
+         <div className="flex min-h-0 min-w-0 flex-1 justify-center overflow-hidden md:pl-64">
           <BrizaRealtimeProvider>
           <RealtimeNotificationToast />
             {children}

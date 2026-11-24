@@ -2,13 +2,15 @@
 import mongoose from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
-import { Connect } from "@/backend/lib/dbConnect";
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
+import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
+import { pusher } from "@/backend/lib/pusher";
 
-import "@/backend/models/user";
 import Conversation from "@/backend/models/conversation";
 import Message from "@/backend/models/message";
+import "@/backend/models/user";
+import { MessageType } from "@/types/message";
 
 type RouteContext = {
   params: Promise<{ conversationId: string }>;
@@ -77,22 +79,37 @@ export const PATCH = withErrorHandler(
       unreadCount: number;
     } | null = null;
 
+    // The other participant will receive the read notification.
+    let otherParticipantId: string | null = null;
+
     try {
       // 5. Perform read-state update transactionally
       await session.withTransaction(async () => {
-        // Find conversation only if current user is a participant
         const conversation = await Conversation.findOne({
           _id: conversationId,
           participants: userId,
         })
-          .select("_id lastMessageSeq memberStates")
+          .select("_id participants lastMessageSeq memberStates")
           .session(session);
 
         if (!conversation) {
           throw createApiError("Conversation not found.", 404);
         }
 
-        // Find current user's read state
+        // Find the other participant.
+        otherParticipantId = conversation.participants.find(
+          (participantId) =>
+            participantId.toString() !== userId
+        )?.toString() ?? null;
+
+        if (!otherParticipantId) {
+          throw createApiError(
+            "Other conversation participant not found.",
+            404
+          );
+        }
+
+        // Find current user's read state.
         const currentMemberState = conversation.memberStates.find(
           (state) => state.userId.toString() === userId
         );
@@ -104,15 +121,12 @@ export const PATCH = withErrorHandler(
           );
         }
 
-        // A user cannot mark messages as read beyond the latest sequence
+        // A user cannot read beyond the latest message.
         if (lastReadSeq > conversation.lastMessageSeq) {
-          throw createApiError(
-            "Invalid read sequence.",
-            400
-          );
+          throw createApiError("Invalid read sequence.", 400);
         }
 
-        // 6. Never allow read progress to move backwards
+        // Never allow read progress to move backwards.
         const effectiveReadSeq = Math.max(
           lastReadSeq,
           currentMemberState.lastReadSeq
@@ -121,7 +135,7 @@ export const PATCH = withErrorHandler(
         let effectiveReadMessageId =
           currentMemberState.lastReadMessageId;
 
-        // 7. Find the message corresponding to the new read position
+        // Find the message corresponding to the new read position.
         if (effectiveReadSeq > currentMemberState.lastReadSeq) {
           const readMessage = await Message.findOne({
             conversationId,
@@ -129,7 +143,7 @@ export const PATCH = withErrorHandler(
           })
             .select("_id")
             .session(session)
-            .lean();
+            .lean<MessageType>();
 
           if (!readMessage) {
             throw createApiError(
@@ -141,14 +155,14 @@ export const PATCH = withErrorHandler(
           effectiveReadMessageId = readMessage._id;
         }
 
-        // 8. Recalculate unread messages sent by the other participant
+        // Recalculate unread messages sent by the other participant.
         const unreadCount = await Message.countDocuments({
           conversationId,
           sequence: { $gt: effectiveReadSeq },
           senderId: { $ne: userId },
         }).session(session);
 
-        // 9. Update only the current user's member state
+        // Update only the current user's member state.
         const updateResult = await Conversation.updateOne(
           {
             _id: conversationId,
@@ -181,7 +195,7 @@ export const PATCH = withErrorHandler(
           );
         }
 
-        // Save result for the response after transaction commits
+        // Save result for use after transaction commits.
         readState = {
           lastReadMessageId: effectiveReadMessageId,
           lastReadSeq: effectiveReadSeq,
@@ -192,7 +206,49 @@ export const PATCH = withErrorHandler(
       await session.endSession();
     }
 
-    // 10. Return updated read state
+    // 6. Publish read receipts AFTER the transaction commits.
+    const committedReadState = readState as {
+      lastReadMessageId: mongoose.Types.ObjectId | null;
+      lastReadSeq: number;
+      unreadCount: number;
+    } | null;
+
+    if (committedReadState && otherParticipantId) {
+      const payload = {
+        conversationId,
+        readerId: userId,
+        lastReadMessageId:
+          committedReadState.lastReadMessageId?.toString() ?? null,
+        lastReadSeq: committedReadState.lastReadSeq,
+      };
+
+      const results = await Promise.allSettled([
+        // Notify clients subscribed to this conversation.
+        pusher.trigger(
+          `private-conversation-${conversationId}`,
+          "messages-read",
+          payload
+        ),
+
+        // Notify the other participant wherever they are in the app.
+        pusher.trigger(
+          `private-user-${otherParticipantId}`,
+          "messages-read-notification",
+          payload
+        ),
+      ]);
+
+      results.forEach((result) => {
+        if (result.status === "rejected") {
+          console.error(
+            "[Pusher] Failed to publish read receipt:",
+            result.reason
+          );
+        }
+      });
+    }
+
+    // 7. Return updated read state.
     return NextResponse.json({
       success: true,
       message: "Messages marked as read.",
