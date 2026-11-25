@@ -307,9 +307,12 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       otherParticipant: otherParticipant ?? null,
       lastMessage: conversation.lastMessageId ?? null,
       lastMessageAt: conversation.lastMessageAt,
-      unreadCount: currentMemberState?.unreadCount ?? 0,
 
-      // Read progress of the other participant.
+      // Current user's read state.
+      unreadCount: currentMemberState?.unreadCount ?? 0,
+      lastReadSeq: currentMemberState?.lastReadSeq ?? 0,
+
+      // Other participant's read state.
       otherParticipantLastReadSeq:
         otherParticipantMemberState?.lastReadSeq ?? 0,
     };

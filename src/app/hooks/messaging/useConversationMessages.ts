@@ -1,10 +1,13 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import useSWRInfinite from "swr/infinite";
 
-import { fetchMessages } from "@/backend/lib/messaging/api";
+import {
+  fetchMessages,
+  type FetchMessagesOptions,
+} from "@/backend/lib/messaging/api";
 
 import type {
   MessagesResponse,
@@ -16,24 +19,31 @@ const PAGE_SIZE = 30;
 type MessagesPageKey = [
   string,
   number | null,
+  FetchMessagesOptions | null
 ];
+
+interface UseConversationMessagesOptions {
+  initialLastReadSeq: number;
+}
 
 export const getKey = (
   conversationId: string,
   pageIndex: number,
-  previousPageData: MessagesResponse | null
+  previousPageData: MessagesResponse | null,
+  initialLastReadSeq: number
 ): MessagesPageKey | null => {
-  // Don't fetch messages without a conversation selected.
-  if (!conversationId) {
-    return null;
-  }
+  if (!conversationId) return null;
 
-  // First page fetches the latest messages.
+  // Initial page: load around the current user's read boundary.
   if (pageIndex === 0) {
-    return [conversationId, null];
+    return [
+      conversationId,
+      null,
+      { around: initialLastReadSeq },
+    ];
   }
 
-  // Stop when there are no older messages.
+  // Subsequent pages fetch older messages.
   if (
     !previousPageData?.hasMore ||
     previousPageData.nextCursor === null
@@ -41,25 +51,31 @@ export const getKey = (
     return null;
   }
 
-  // Fetch messages older than the previous page's cursor.
   return [
     conversationId,
     previousPageData.nextCursor,
+    null,
   ];
 };
 
 const fetcher = async (
-  [conversationId, before]: MessagesPageKey
+  [
+    conversationId,
+    before,
+    options,
+  ]: MessagesPageKey
 ): Promise<MessagesResponse> => {
   return fetchMessages(
     conversationId,
     before,
-    PAGE_SIZE
+    PAGE_SIZE,
+    options ?? undefined
   );
 };
 
 export const useConversationMessages = (
-  conversationId: string | null
+  conversationId: string | null,
+  { initialLastReadSeq }: UseConversationMessagesOptions
 ) => {
   const {
     data,
@@ -74,35 +90,32 @@ export const useConversationMessages = (
       getKey(
         conversationId ?? "",
         pageIndex,
-        previousPageData
+        previousPageData,
+        initialLastReadSeq
       ),
     fetcher,
     {
-    initialSize: 1,
-    persistSize: false,
+      initialSize: 1,
+      persistSize: false,
 
-    revalidateFirstPage: true,
-    revalidateOnMount: true,
+      revalidateFirstPage: false,
+      revalidateOnMount: true,
 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    revalidateIfStale: false,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
 
-    dedupingInterval: 2000,
-}
+      dedupingInterval: 2000,
+    }
   );
 
-  // SWR stores pages newest-first.
-  // Reverse the page order to display messages oldest-first.
+  // Combine all pages, remove duplicates and sort chronologically.
   const messages = useMemo(() => {
     if (!data) return [];
 
-    const uniqueMessages = new Map<
-      string,
-      MessagingMessage
-    >();
+    const uniqueMessages = new Map<string, MessagingMessage>();
 
-    for (const page of [...data].reverse()) {
+    for (const page of data) {
       for (const message of page.messages) {
         uniqueMessages.set(message._id, message);
       }
@@ -119,58 +132,139 @@ export const useConversationMessages = (
   const isLoadingMore =
     size > (data?.length ?? 0);
 
-  // Fetch older messages.
-  const loadOlder = async () => {
-    if (
-      !hasMore ||
-      isLoadingMore ||
-      isValidating
-    ) {
-      return;
-    }
+  // Load older messages.
+  const loadOlder = useCallback(async () => {
+    if (!hasMore || isLoadingMore || isValidating) return;
 
     await setSize((currentSize) => currentSize + 1);
-  };
+  }, [hasMore, isLoadingMore, isValidating, setSize]);
 
-  // Add a newly sent message to the first (latest) page.
-  const addMessage = async (
-    newMessage: MessagingMessage
-  ) => {
+  // Fetch newer messages after a particular sequence.
+  const loadNewer = useCallback(
+    async (after: number) => {
+      if (!conversationId) return [];
+
+      const response = await fetchMessages(
+        conversationId,
+        null,
+        PAGE_SIZE,
+        { after }
+      );
+
+      await mutate(
+        (pages) => {
+          if (!pages?.length) return pages;
+
+          const existingIds = new Set(
+            pages.flatMap((page) =>
+              page.messages.map((message) => message._id)
+            )
+          );
+
+          const newMessages = response.messages.filter(
+            (message) => !existingIds.has(message._id)
+          );
+
+          if (newMessages.length === 0) return pages;
+
+          const updatedPages = [...pages];
+
+          updatedPages[0] = {
+            ...updatedPages[0],
+            messages: [
+              ...updatedPages[0].messages,
+              ...newMessages,
+            ].sort((a, b) => a.sequence - b.sequence),
+          };
+
+          return updatedPages;
+        },
+        { revalidate: false }
+      );
+
+      return response.messages;
+    },
+    [conversationId, mutate]
+  );
+
+  // Fetch the latest messages, used by the down-arrow.
+  const loadLatest = useCallback(async () => {
+    if (!conversationId) return [];
+
+    const response = await fetchMessages(
+      conversationId,
+      null,
+      PAGE_SIZE,
+      { latest: true }
+    );
+
     await mutate(
       (pages) => {
-        if (!pages || pages.length === 0) {
-          return pages;
-        }
-
-        const updatedPages = [...pages];
-
-        const firstPage = updatedPages[0];
-
-        if (!firstPage) {
-          return pages;
-        }
-
-        // Prevent duplicate insertion.
-        if (
-          firstPage.messages.some(
-            (message) => message._id === newMessage._id
+        const existingPages = pages ?? [];
+        const existingIds = new Set(
+          existingPages.flatMap((page) =>
+            page.messages.map((message) => message._id)
           )
-        ) {
-          return pages;
+        );
+
+        const newMessages = response.messages.filter(
+          (message) => !existingIds.has(message._id)
+        );
+
+        if (!existingPages.length) {
+          return [response];
         }
+
+        const updatedPages = [...existingPages];
 
         updatedPages[0] = {
-          ...firstPage,
-          messages: [...firstPage.messages, newMessage].sort(
-            (a, b) => a.sequence - b.sequence
-          ),
+          ...updatedPages[0],
+          messages: [
+            ...updatedPages[0].messages,
+            ...newMessages,
+          ].sort((a, b) => a.sequence - b.sequence),
         };
 
         return updatedPages;
       },
       { revalidate: false }
     );
-  };
+
+    return response.messages;
+  }, [conversationId, mutate]);
+
+  // Insert a newly sent or received message.
+  const addMessage = useCallback(
+    async (newMessage: MessagingMessage) => {
+      await mutate(
+        (pages) => {
+          if (!pages?.length) return pages;
+
+          const alreadyExists = pages.some((page) =>
+            page.messages.some(
+              (message) => message._id === newMessage._id
+            )
+          );
+
+          if (alreadyExists) return pages;
+
+          const updatedPages = [...pages];
+
+          updatedPages[0] = {
+            ...updatedPages[0],
+            messages: [
+              ...updatedPages[0].messages,
+              newMessage,
+            ].sort((a, b) => a.sequence - b.sequence),
+          };
+
+          return updatedPages;
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
 
   return {
     messages,
@@ -182,6 +276,8 @@ export const useConversationMessages = (
 
     hasMore,
     loadOlder,
+    loadNewer,
+    loadLatest,
 
     addMessage,
     mutate,

@@ -259,7 +259,7 @@ body {
 
   .profile-canvas {
     --color-primary: #bdc2ff;
-    --color-primary-container: #818cf8;
+    --color-primary-container: rgba(129, 141, 248, 0.4);
     --color-secondary-container: #3131c0;
     --color-tertiary-container: #ff5c72;
     --color-surface-container-lowest: #0e0e12;

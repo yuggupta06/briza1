@@ -1,28 +1,25 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { MessageCircle } from "lucide-react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
-import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import { useConversations } from "@/app/hooks/messaging/useConversations";
+import { useCurrentUser } from "@/app/hooks/useCurrentUser";
 import { useRealtime } from "@/app/providers/RealtimeProvider";
 
-import ConversationList from "./ConversationList";
 import ChatWindow from "./ChatWindow";
+import ConversationList from "./ConversationList";
 
 import type {
-  MessagingMessage,
   ConversationInboxItem,
+  MessagingMessage,
 } from "@/types/messaging-ui";
-import { useSWRConfig } from "swr";
-import { unstable_serialize } from "swr/infinite";
 
-import {
-  getKey,
-} from "@/app/hooks/messaging/useConversationMessages";
+
+
 
 interface DirectConversationResponse {
   success: boolean;
@@ -33,6 +30,7 @@ interface DirectConversationResponse {
     lastMessageAt: string | null;
     lastMessageSeq: number;
     unreadCount: number;
+    lastReadSeq: number;
     otherParticipantLastReadSeq: number;
   };
 }
@@ -43,7 +41,6 @@ export default function MessagesPage() {
 
   const { currentUser } = useCurrentUser();
   const { subscribe } = useRealtime();
-  const { mutate: globalMutate } = useSWRConfig();
 
   const {
     conversations,
@@ -117,6 +114,7 @@ export default function MessagesPage() {
           lastMessage: data.conversation.lastMessage,
           lastMessageAt: data.conversation.lastMessageAt,
           unreadCount: data.conversation.unreadCount,
+          lastReadSeq: data.conversation.lastReadSeq,
           otherParticipantLastReadSeq:
             data.conversation.otherParticipantLastReadSeq,
         };
@@ -280,11 +278,16 @@ export default function MessagesPage() {
   const handleUnreadCountChange = useCallback(
     async (
       conversationId: string,
-      unreadCount: number
+      unreadCount: number,
+      lastReadSeq: number
     ) => {
       setDirectConversation((previous) =>
         previous?._id === conversationId
-          ? { ...previous, unreadCount }
+          ? {
+            ...previous,
+            unreadCount,
+            lastReadSeq,
+          }
           : previous
       );
 
@@ -297,7 +300,11 @@ export default function MessagesPage() {
             conversations: page.conversations.map(
               (conversation) =>
                 conversation._id === conversationId
-                  ? { ...conversation, unreadCount }
+                  ? {
+                    ...conversation,
+                    unreadCount,
+                    lastReadSeq,
+                  }
                   : conversation
             ),
           }));
@@ -357,17 +364,18 @@ export default function MessagesPage() {
             }
 
             updatedConversation = {
-  _id: conversationId,
-  otherParticipant: {
-    _id: String(sender._id),
-    username: sender.username,
-    imageUrl: sender.imageUrl,
-  },
-  lastMessage: message,
-  lastMessageAt: message.createdAt,
-  unreadCount: unreadCount ?? 1,
-  otherParticipantLastReadSeq: 0,
-};
+              _id: conversationId,
+              otherParticipant: {
+                _id: String(sender._id),
+                username: sender.username,
+                imageUrl: sender.imageUrl,
+              },
+              lastMessage: message,
+              lastMessageAt: message.createdAt,
+              unreadCount: unreadCount ?? 1,
+              lastReadSeq: 0,
+              otherParticipantLastReadSeq: 0,
+            };
           }
 
           // Remove the old entry from every page.
@@ -393,110 +401,111 @@ export default function MessagesPage() {
         },
         { revalidate: false }
       );
-      await globalMutate(
-        unstable_serialize((pageIndex, previousPageData) =>
-          getKey(
-            conversationId,
-            pageIndex,
-            previousPageData
-          )
-        ),
-        (pages) => {
-          if (!pages?.length) return pages;
 
-          const updatedPages = [...pages];
+      //   unstable_serialize((pageIndex, previousPageData) =>
+      //     getKey(
+      //       conversationId,
+      //       pageIndex,
+      //       previousPageData,
 
-          const firstPage = updatedPages[0];
+      //     )
+      //   ),
+      //   (pages) => {
+      //     if (!pages?.length) return pages;
 
-          if (!firstPage) return pages;
+      //     const updatedPages = [...pages];
 
-          const exists = updatedPages.some((page) =>
-            page.messages.some(
-              (item: { _id: string; }) => item._id === message._id
-            )
-          );
+      //     const firstPage = updatedPages[0];
 
-          if (exists) return pages;
+      //     if (!firstPage) return pages;
 
-          updatedPages[0] = {
-            ...firstPage,
-            messages: [...firstPage.messages, message].sort(
-              (a, b) => a.sequence - b.sequence
-            ),
-          };
+      //     const exists = updatedPages.some((page) =>
+      //       page.messages.some(
+      //         (item: { _id: string; }) => item._id === message._id
+      //       )
+      //     );
 
-          return updatedPages;
-        },
-        { revalidate: false }
-      );
+      //     if (exists) return pages;
+
+      //     updatedPages[0] = {
+      //       ...firstPage,
+      //       messages: [...firstPage.messages, message].sort(
+      //         (a, b) => a.sequence - b.sequence
+      //       ),
+      //     };
+
+      //     return updatedPages;
+      //   },
+      //   { revalidate: false }
+      // );
     },
-    [mutate, globalMutate]
+    [mutate,]
   );
 
-// Update another conversation's read progress when its recipient
-// reads messages while the current user is elsewhere.
-const handleMessagesReadNotification = useCallback(
-  async (payload: {
-    conversationId: string;
-    readerId: string;
-    lastReadMessageId: string | null;
-    lastReadSeq: number;
-  }) => {
-    const { conversationId, lastReadSeq } = payload;
+  // Update another conversation's read progress when its recipient
+  // reads messages while the current user is elsewhere.
+  const handleMessagesReadNotification = useCallback(
+    async (payload: {
+      conversationId: string;
+      readerId: string;
+      lastReadMessageId: string | null;
+      lastReadSeq: number;
+    }) => {
+      const { conversationId, lastReadSeq } = payload;
 
-    // Update a directly fetched conversation, if applicable.
-    setDirectConversation((previous) => {
-      if (previous?._id !== conversationId) return previous;
+      // Update a directly fetched conversation, if applicable.
+      setDirectConversation((previous) => {
+        if (previous?._id !== conversationId) return previous;
 
-      return {
-        ...previous,
-        otherParticipantLastReadSeq: Math.max(
-          previous.otherParticipantLastReadSeq ?? 0,
-          lastReadSeq
-        ),
-      };
-    });
+        return {
+          ...previous,
+          otherParticipantLastReadSeq: Math.max(
+            previous.otherParticipantLastReadSeq ?? 0,
+            lastReadSeq
+          ),
+        };
+      });
 
-    // Update the inbox SWR cache across all loaded pages.
-    await mutate(
-      (pages) => {
-        if (!pages) return pages;
+      // Update the inbox SWR cache across all loaded pages.
+      await mutate(
+        (pages) => {
+          if (!pages) return pages;
 
-        return pages.map((page) => ({
-          ...page,
-          conversations: page.conversations.map((conversation) =>
-            conversation._id === conversationId
-              ? {
+          return pages.map((page) => ({
+            ...page,
+            conversations: page.conversations.map((conversation) =>
+              conversation._id === conversationId
+                ? {
                   ...conversation,
                   otherParticipantLastReadSeq: Math.max(
                     conversation.otherParticipantLastReadSeq ?? 0,
                     lastReadSeq
                   ),
                 }
-              : conversation
-          ),
-        }));
-      },
-      { revalidate: false }
-    );
-  },
-  [mutate]
-);
-
-// Listen for read receipts on the logged-in user's private channel.
-useEffect(() => {
-  if (!currentUser?._id) return;
-
-  return subscribe(
-    "messages-read-notification",
-    handleMessagesReadNotification
+                : conversation
+            ),
+          }));
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate]
   );
-}, [
-  currentUser?._id,
-  subscribe,
-  handleMessagesReadNotification,
-]);
-  
+
+  // Listen for read receipts on the logged-in user's private channel.
+  useEffect(() => {
+    if (!currentUser?._id) return;
+
+    return subscribe(
+      "messages-read-notification",
+      handleMessagesReadNotification
+    );
+  }, [
+    currentUser?._id,
+    subscribe,
+    handleMessagesReadNotification,
+  ]);
+
   // Subscribe to incoming message notifications for the logged-in user.
   useEffect(() => {
     if (!currentUser?._id) return;
@@ -549,7 +558,7 @@ useEffect(() => {
     >
       {/* Inbox sidebar */}
       <aside
-        className={`h-full w-full shrink-0 md:w-[340px] lg:w-[380px] ${selectedConversationId ? "hidden md:block" : "block"
+        className={`h-full w-full shrink-0 md:w-85 lg:w-95 ${selectedConversationId ? "hidden md:block" : "block"
           }`}
       >
         <ConversationList

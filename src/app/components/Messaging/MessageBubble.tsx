@@ -45,13 +45,13 @@ export default function MessageBubble({
       <div
         className={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm sm:max-w-[65%] ${
           isOwnMessage
-            ? "rounded-br-sm bg-primary text-white"
+            ? "rounded-br-sm bg-[#818df8]/40 text-white"
             : "rounded-bl-sm bg-surface-container text-on-surface"
         }`}
       >
         {/* Text content */}
         {message.content && (
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+          <p className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
             {message.content}
           </p>
         )}

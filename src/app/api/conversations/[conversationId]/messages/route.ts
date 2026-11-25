@@ -20,9 +20,9 @@ type RouteContext = {
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 50;
 
+
 export const GET = withErrorHandler(
     async (req: NextRequest, { params }: RouteContext) => {
-        // 1. Authenticate the current user
         const { userId } = await getAuthUser();
 
         if (!mongoose.isValidObjectId(userId)) {
@@ -32,7 +32,6 @@ export const GET = withErrorHandler(
             );
         }
 
-        // 2. Get and validate the conversation ID
         const { conversationId } = await params;
 
         if (!mongoose.isValidObjectId(conversationId)) {
@@ -42,23 +41,15 @@ export const GET = withErrorHandler(
             );
         }
 
-        // 3. Read and validate pagination parameters
-        const beforeParam = req.nextUrl.searchParams.get("before");
-        const limitParam = req.nextUrl.searchParams.get("limit");
+        const searchParams = req.nextUrl.searchParams;
 
-        let before: number | undefined;
+        const beforeParam = searchParams.get("before");
+        const aroundParam = searchParams.get("around");
+        const afterParam = searchParams.get("after");
+        const latestParam = searchParams.get("latest");
+        const limitParam = searchParams.get("limit");
+
         let limit = DEFAULT_LIMIT;
-
-        if (beforeParam !== null) {
-            before = Number(beforeParam);
-
-            if (!Number.isSafeInteger(before) || before < 1) {
-                return NextResponse.json(
-                    { success: false, message: "Invalid message cursor." },
-                    { status: 400 }
-                );
-            }
-        }
 
         if (limitParam !== null) {
             limit = Number(limitParam);
@@ -69,19 +60,68 @@ export const GET = withErrorHandler(
                 limit > MAX_LIMIT
             ) {
                 return NextResponse.json(
-                    {
-                        success: false,
-                        message: `Limit must be between 1 and ${MAX_LIMIT}.`,
-                    },
+                    { success: false, message: `Limit must be between 1 and ${MAX_LIMIT}.` },
                     { status: 400 }
                 );
             }
         }
 
-        // 4. Connect to the database
+        const parseCursor = (
+            value: string | null,
+            allowZero = false
+        ) => {
+            if (value === null) return undefined;
+
+            const parsed = Number(value);
+
+            if (
+                !Number.isSafeInteger(parsed) ||
+                parsed < (allowZero ? 0 : 1)
+            ) {
+                throw Object.assign(new Error("Invalid message cursor."), {
+                    statusCode: 400,
+                });
+            }
+
+            return parsed;
+        };
+
+        let before: number | undefined;
+        let around: number | undefined;
+        let after: number | undefined;
+
+        try {
+            before = parseCursor(beforeParam);
+            around = parseCursor(aroundParam, true);
+            after = parseCursor(afterParam);
+        } catch (error) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: error instanceof Error ? error.message : "Invalid cursor.",
+                },
+                { status: 400 }
+            );
+        }
+
+        const latest = latestParam === "true";
+
+        const suppliedModes = [
+            before !== undefined,
+            around !== undefined,
+            after !== undefined,
+            latest,
+        ].filter(Boolean).length;
+
+        if (suppliedModes > 1) {
+            return NextResponse.json(
+                { success: false, message: "Use only one pagination mode." },
+                { status: 400 }
+            );
+        }
+
         await Connect();
 
-        // 5. Verify that the current user belongs to this conversation
         const conversationExists = await Conversation.exists({
             _id: conversationId,
             participants: userId,
@@ -94,52 +134,111 @@ export const GET = withErrorHandler(
             );
         }
 
-        // 6. Build the message query
-        const messageQuery: {
-            conversationId: string;
-            sequence?: { $lt: number };
-        } = {
-            conversationId,
-        };
+        const baseQuery = { conversationId };
 
-        // Fetch only messages older than the cursor when provided
-        if (before !== undefined) {
-            messageQuery.sequence = { $lt: before };
+        let messages = [];
+        let nextCursor: number | null = null;
+        let hasMore = false;
+        let newerCursor: number | null = null;
+        let hasNewer = false;
+
+        if (around !== undefined) {
+            // Include the last-read message as context.
+            const olderLimit = Math.floor(limit / 2);
+            const newerLimit = limit - olderLimit;
+
+            const [olderResults, newerResults] = await Promise.all([
+                Message.find({
+                    ...baseQuery,
+                    sequence: { $lte: around },
+                })
+                    .sort({ sequence: -1 })
+                    .limit(olderLimit + 1)
+                    .populate("senderId", "_id username imageUrl")
+                    .lean(),
+
+                Message.find({
+                    ...baseQuery,
+                    sequence: { $gt: around },
+                })
+                    .sort({ sequence: 1 })
+                    .limit(newerLimit + 1)
+                    .populate("senderId", "_id username imageUrl")
+                    .lean(),
+            ]);
+
+            hasMore = olderResults.length > olderLimit;
+            hasNewer = newerResults.length > newerLimit;
+
+            const olderMessages = olderResults.slice(0, olderLimit);
+            const newerMessages = newerResults.slice(0, newerLimit);
+
+            messages = [
+                ...olderMessages,
+                ...newerMessages,
+            ].sort((a, b) => a.sequence - b.sequence);
+
+            nextCursor =
+                hasMore && messages.length > 0
+                    ? messages[0].sequence
+                    : null;
+
+            newerCursor =
+                hasNewer && messages.length > 0
+                    ? messages[messages.length - 1].sequence
+                    : null;
+        } else if (after !== undefined) {
+            const results = await Message.find({
+                ...baseQuery,
+                sequence: { $gt: after },
+            })
+                .sort({ sequence: 1 })
+                .limit(limit + 1)
+                .populate("senderId", "_id username imageUrl")
+                .lean();
+
+            hasNewer = results.length > limit;
+            messages = results.slice(0, limit);
+
+            newerCursor =
+                hasNewer && messages.length > 0
+                    ? messages[messages.length - 1].sequence
+                    : null;
+        } else {
+            const query =
+                before !== undefined
+                    ? { ...baseQuery, sequence: { $lt: before } }
+                    : baseQuery;
+
+            const results = await Message.find(query)
+                .sort({ sequence: -1 })
+                .limit(limit + 1)
+                .populate("senderId", "_id username imageUrl")
+                .lean();
+
+            hasMore = results.length > limit;
+            messages = results.slice(0, limit).reverse();
+
+            nextCursor =
+                hasMore && messages.length > 0
+                    ? messages[0].sequence
+                    : null;
         }
 
-        // 7. Fetch one extra message to determine whether more exist
-        const fetchedMessages = await Message.find(messageQuery)
-            .sort({ sequence: -1 })
-            .limit(limit + 1)
-            .populate("senderId", "_id username imageUrl")
-            .lean();
-
-        const hasMore = fetchedMessages.length > limit;
-
-        // Remove the extra message used for pagination detection
-        const pageMessages = fetchedMessages.slice(0, limit);
-
-        // 8. Reverse to chronological order (oldest -> newest)
-        pageMessages.reverse();
-
-        // 9. Cursor for fetching the next batch of older messages
-        const nextCursor =
-            hasMore && pageMessages.length > 0
-                ? pageMessages[0].sequence
-                : null;
-
-        // 10. Return the result
         return NextResponse.json(
             {
                 success: true,
-                messages: pageMessages,
+                messages,
                 nextCursor,
                 hasMore,
+                newerCursor,
+                hasNewer,
             },
             { status: 200 }
         );
     }
 );
+
 
 
 

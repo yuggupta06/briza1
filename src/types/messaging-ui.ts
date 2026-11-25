@@ -37,6 +37,7 @@ export interface ConversationInboxItem {
   lastMessage: MessagingMessage | null;
   lastMessageAt: string | null;
   unreadCount: number;
+  lastReadSeq: number;
   otherParticipantLastReadSeq: number;
 }
 export interface CreateConversationResponse {
@@ -58,6 +59,9 @@ export interface MessagesResponse {
   messages: MessagingMessage[];
   nextCursor: number | null;
   hasMore: boolean;
+
+  newerCursor?: number | null;
+  hasNewer?: boolean;
 }
 
 export interface SendMessageResponse {

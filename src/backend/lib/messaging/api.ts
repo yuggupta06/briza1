@@ -30,19 +30,32 @@ export const fetchConversations = async (
 
   return response.data;
 };
+export interface FetchMessagesOptions {
+  around?: number;
+  after?: number;
+  latest?: boolean;
+}
 
 // GET /api/conversations/[conversationId]/messages
 export const fetchMessages = async (
   conversationId: string,
   before?: number | null,
-  limit = 30
+  limit = 30,
+  options?: FetchMessagesOptions
 ): Promise<MessagesResponse> => {
   const response = await axios.get<MessagesResponse>(
     `${API_BASE}/${conversationId}/messages`,
     {
       ...axiosConfig,
       params: {
-        ...(before !== null && before !== undefined ? { before } : {}),
+        ...(before != null ? { before } : {}),
+        ...(options?.around !== undefined
+          ? { around: options.around }
+          : {}),
+        ...(options?.after !== undefined
+          ? { after: options.after }
+          : {}),
+        ...(options?.latest ? { latest: true } : {}),
         limit,
       },
     }
