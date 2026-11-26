@@ -8,7 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "../ui/avatar";
 import { Icon } from "../ui/briza-icon";
-
+import Image from "next/image";
 
 
 export function SideNav() {
@@ -31,19 +31,19 @@ export function SideNav() {
         {/* Logo */}
         <div className="flex items-center gap-3 px-2 pt-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-outline-variant/40 bg-surface-container-high text-primary shadow-sm">
-            <Icon
-              name="filter_vintage"
-              filled
-              className="text-[20px]"
+           
+            <Image
+              src="/images/Briza logo.png"
+              alt="Briza"
+              width={40}
+              height={40}
+              priority
             />
           </div>
 
           <div className="flex flex-col">
             <span className="text-headline-md font-bold tracking-tight text-on-surface">
               Briza
-            </span>
-            <span className="text-label-sm tracking-wider text-outline">
-              Curated Visual Exhibition
             </span>
           </div>
         </div>

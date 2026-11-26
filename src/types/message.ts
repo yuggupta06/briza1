@@ -12,6 +12,28 @@ export type AttachmentType = {
   name: string | null;
 };
 
+// Information needed when a reply reference is populated.
+export interface MessageReplyType {
+  _id: Types.ObjectId;
+
+  senderId: Types.ObjectId | PopulatedUserType;
+
+  messageType: MessageContentType;
+
+  content: string | null;
+
+  attachments: AttachmentType[];
+
+  createdAt: Date;
+}
+
+// Tracks an individual user's deletion of a message.
+export interface MessageDeletedForType {
+  userId: Types.ObjectId;
+
+  deletedAt: Date;
+}
+
 export interface MessageType {
   _id: Types.ObjectId;
 
@@ -28,6 +50,17 @@ export interface MessageType {
   attachments: AttachmentType[];
 
   editedAt: Date | null;
+
+  // Can be an ObjectId before population or a populated message.
+  replyTo: Types.ObjectId | MessageReplyType | null;
+
+  // Users who deleted this message for themselves.
+  deletedFor: MessageDeletedForType[];
+
+  // Global deletion information.
+  deletedForEveryoneAt: Date | null;
+
+  deletedForEveryoneBy: Types.ObjectId | null;
 
   createdAt: Date;
 

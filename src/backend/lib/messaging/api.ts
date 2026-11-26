@@ -68,6 +68,7 @@ export interface SendMessagePayload {
   messageType: MessageContentType;
   content: string | null;
   attachments: MessagingMessage["attachments"];
+  replyTo?: string | null;
 }
 
 // POST /api/conversations/[conversationId]/messages

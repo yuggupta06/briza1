@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import { pusher } from "@/backend/lib/pusher";
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +10,8 @@ import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 import Conversation from "@/backend/models/conversation";
 import Message from "@/backend/models/message";
 import "@/backend/models/user";
-import { AttachmentType } from "@/types/message";
+
+import type { AttachmentType } from "@/types/message";
 
 type RouteContext = {
     params: Promise<{
@@ -20,6 +22,35 @@ type RouteContext = {
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 50;
 
+type MessageContentType = "text" | "image" | "video" | "file";
+
+const MAX_CONTENT_LENGTH = 5000;
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_NAME_LENGTH = 255;
+
+function createApiError(message: string, statusCode: number) {
+    return Object.assign(new Error(message), { statusCode });
+}
+
+// Shared population for sender and replied-to message.
+const populateMessage = [
+    {
+        path: "senderId",
+        select: "_id username imageUrl",
+    },
+    {
+        path: "replyTo",
+        select: "_id senderId messageType content attachments createdAt",
+        populate: {
+            path: "senderId",
+            select: "_id username imageUrl",
+        },
+    },
+];
+
+// --------------------------------------------------
+// GET: Fetch conversation messages
+// --------------------------------------------------
 
 export const GET = withErrorHandler(
     async (req: NextRequest, { params }: RouteContext) => {
@@ -60,7 +91,10 @@ export const GET = withErrorHandler(
                 limit > MAX_LIMIT
             ) {
                 return NextResponse.json(
-                    { success: false, message: `Limit must be between 1 and ${MAX_LIMIT}.` },
+                    {
+                        success: false,
+                        message: `Limit must be between 1 and ${MAX_LIMIT}.`,
+                    },
                     { status: 400 }
                 );
             }
@@ -78,9 +112,10 @@ export const GET = withErrorHandler(
                 !Number.isSafeInteger(parsed) ||
                 parsed < (allowZero ? 0 : 1)
             ) {
-                throw Object.assign(new Error("Invalid message cursor."), {
-                    statusCode: 400,
-                });
+                throw Object.assign(
+                    new Error("Invalid message cursor."),
+                    { statusCode: 400 }
+                );
             }
 
             return parsed;
@@ -98,7 +133,10 @@ export const GET = withErrorHandler(
             return NextResponse.json(
                 {
                     success: false,
-                    message: error instanceof Error ? error.message : "Invalid cursor.",
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "Invalid cursor.",
                 },
                 { status: 400 }
             );
@@ -115,7 +153,10 @@ export const GET = withErrorHandler(
 
         if (suppliedModes > 1) {
             return NextResponse.json(
-                { success: false, message: "Use only one pagination mode." },
+                {
+                    success: false,
+                    message: "Use only one pagination mode.",
+                },
                 { status: 400 }
             );
         }
@@ -143,7 +184,6 @@ export const GET = withErrorHandler(
         let hasNewer = false;
 
         if (around !== undefined) {
-            // Include the last-read message as context.
             const olderLimit = Math.floor(limit / 2);
             const newerLimit = limit - olderLimit;
 
@@ -154,7 +194,7 @@ export const GET = withErrorHandler(
                 })
                     .sort({ sequence: -1 })
                     .limit(olderLimit + 1)
-                    .populate("senderId", "_id username imageUrl")
+                    .populate(populateMessage)
                     .lean(),
 
                 Message.find({
@@ -163,7 +203,7 @@ export const GET = withErrorHandler(
                 })
                     .sort({ sequence: 1 })
                     .limit(newerLimit + 1)
-                    .populate("senderId", "_id username imageUrl")
+                    .populate(populateMessage)
                     .lean(),
             ]);
 
@@ -187,6 +227,7 @@ export const GET = withErrorHandler(
                 hasNewer && messages.length > 0
                     ? messages[messages.length - 1].sequence
                     : null;
+
         } else if (after !== undefined) {
             const results = await Message.find({
                 ...baseQuery,
@@ -194,7 +235,7 @@ export const GET = withErrorHandler(
             })
                 .sort({ sequence: 1 })
                 .limit(limit + 1)
-                .populate("senderId", "_id username imageUrl")
+                .populate(populateMessage)
                 .lean();
 
             hasNewer = results.length > limit;
@@ -204,16 +245,20 @@ export const GET = withErrorHandler(
                 hasNewer && messages.length > 0
                     ? messages[messages.length - 1].sequence
                     : null;
+
         } else {
             const query =
                 before !== undefined
-                    ? { ...baseQuery, sequence: { $lt: before } }
+                    ? {
+                        ...baseQuery,
+                        sequence: { $lt: before },
+                    }
                     : baseQuery;
 
             const results = await Message.find(query)
                 .sort({ sequence: -1 })
                 .limit(limit + 1)
-                .populate("senderId", "_id username imageUrl")
+                .populate(populateMessage)
                 .lean();
 
             hasMore = results.length > limit;
@@ -239,24 +284,15 @@ export const GET = withErrorHandler(
     }
 );
 
-
-
-
-type MessageType = "text" | "image" | "video" | "file";
-
-
-const MAX_CONTENT_LENGTH = 5000;
-const MAX_ATTACHMENTS = 10;
-const MAX_ATTACHMENT_NAME_LENGTH = 255;
-
-function createApiError(message: string, statusCode: number) {
-    return Object.assign(new Error(message), { statusCode });
-}
+// --------------------------------------------------
+// POST: Send a new message or reply
+// --------------------------------------------------
 
 function validateMessageBody(body: unknown): {
-    messageType: MessageType;
+    messageType: MessageContentType;
     content: string | null;
     attachments: AttachmentType[];
+    replyTo: string | null;
 } {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
         throw createApiError("Invalid request body.", 400);
@@ -264,7 +300,7 @@ function validateMessageBody(body: unknown): {
 
     const data = body as Record<string, unknown>;
 
-    const allowedTypes: MessageType[] = [
+    const allowedTypes: MessageContentType[] = [
         "text",
         "image",
         "video",
@@ -273,19 +309,22 @@ function validateMessageBody(body: unknown): {
 
     if (
         typeof data.messageType !== "string" ||
-        !allowedTypes.includes(data.messageType as MessageType)
+        !allowedTypes.includes(data.messageType as MessageContentType)
     ) {
         throw createApiError("Invalid message type.", 400);
     }
 
-    const messageType = data.messageType as MessageType;
+    const messageType = data.messageType as MessageContentType;
 
-    // Validate content
+    // Validate content.
     let content: string | null = null;
 
     if (data.content !== undefined && data.content !== null) {
         if (typeof data.content !== "string") {
-            throw createApiError("Message content must be a string.", 400);
+            throw createApiError(
+                "Message content must be a string.",
+                400
+            );
         }
 
         content = data.content.trim();
@@ -302,11 +341,28 @@ function validateMessageBody(body: unknown): {
         }
     }
 
-    // Validate attachments
+    // Validate reply reference.
+    let replyTo: string | null = null;
+
+    if (data.replyTo !== undefined && data.replyTo !== null) {
+        if (
+            typeof data.replyTo !== "string" ||
+            !mongoose.isValidObjectId(data.replyTo)
+        ) {
+            throw createApiError("Invalid reply message ID.", 400);
+        }
+
+        replyTo = data.replyTo;
+    }
+
+    // Validate attachments.
     const rawAttachments = data.attachments ?? [];
 
     if (!Array.isArray(rawAttachments)) {
-        throw createApiError("Attachments must be an array.", 400);
+        throw createApiError(
+            "Attachments must be an array.",
+            400
+        );
     }
 
     if (rawAttachments.length > MAX_ATTACHMENTS) {
@@ -334,11 +390,17 @@ function validateMessageBody(body: unknown): {
                 typeof attachment.mediaType !== "string" ||
                 !allowedMediaTypes.includes(attachment.mediaType)
             ) {
-                throw createApiError("Invalid attachment media type.", 400);
+                throw createApiError(
+                    "Invalid attachment media type.",
+                    400
+                );
             }
 
             if (typeof attachment.url !== "string") {
-                throw createApiError("Invalid attachment URL.", 400);
+                throw createApiError(
+                    "Invalid attachment URL.",
+                    400
+                );
             }
 
             let parsedUrl: URL;
@@ -346,7 +408,10 @@ function validateMessageBody(body: unknown): {
             try {
                 parsedUrl = new URL(attachment.url);
             } catch {
-                throw createApiError("Invalid attachment URL.", 400);
+                throw createApiError(
+                    "Invalid attachment URL.",
+                    400
+                );
             }
 
             if (parsedUrl.protocol !== "https:") {
@@ -361,20 +426,32 @@ function validateMessageBody(body: unknown): {
                 !Number.isFinite(attachment.size) ||
                 attachment.size < 0
             ) {
-                throw createApiError("Invalid attachment size.", 400);
+                throw createApiError(
+                    "Invalid attachment size.",
+                    400
+                );
             }
 
             let name: string | null = null;
 
-            if (attachment.name !== undefined && attachment.name !== null) {
+            if (
+                attachment.name !== undefined &&
+                attachment.name !== null
+            ) {
                 if (typeof attachment.name !== "string") {
-                    throw createApiError("Invalid attachment name.", 400);
+                    throw createApiError(
+                        "Invalid attachment name.",
+                        400
+                    );
                 }
 
                 name = attachment.name.trim() || null;
 
                 if (name && name.length > MAX_ATTACHMENT_NAME_LENGTH) {
-                    throw createApiError("Attachment name is too long.", 400);
+                    throw createApiError(
+                        "Attachment name is too long.",
+                        400
+                    );
                 }
             }
 
@@ -387,10 +464,13 @@ function validateMessageBody(body: unknown): {
         }
     );
 
-    // Validate message type against content and attachments
+    // Validate message type against content and attachments.
     if (messageType === "text") {
         if (!content) {
-            throw createApiError("Text message cannot be empty.", 400);
+            throw createApiError(
+                "Text message cannot be empty.",
+                400
+            );
         }
 
         if (attachments.length > 0) {
@@ -423,49 +503,63 @@ function validateMessageBody(body: unknown): {
         messageType,
         content,
         attachments,
+        replyTo,
     };
 }
 
 export const POST = withErrorHandler(
     async (req: NextRequest, { params }: RouteContext) => {
-        // 1. Authenticate the sender
+        // 1. Authenticate the sender.
         const { userId } = await getAuthUser();
 
         if (!mongoose.isValidObjectId(userId)) {
-            throw createApiError("Invalid authenticated user.", 401);
+            throw createApiError(
+                "Invalid authenticated user.",
+                401
+            );
         }
 
-        // 2. Validate conversation ID
+        // 2. Validate conversation ID.
         const { conversationId } = await params;
 
         if (!mongoose.isValidObjectId(conversationId)) {
-            throw createApiError("Invalid conversation ID.", 400);
+            throw createApiError(
+                "Invalid conversation ID.",
+                400
+            );
         }
 
-        // 3. Parse and validate request body
+        // 3. Parse and validate request body.
         let body: unknown;
-
 
         try {
             body = await req.json();
         } catch {
-            throw createApiError("Invalid JSON request body.", 400);
+            throw createApiError(
+                "Invalid JSON request body.",
+                400
+            );
         }
 
-        const { messageType, content, attachments } =
-            validateMessageBody(body);
+        const {
+            messageType,
+            content,
+            attachments,
+            replyTo,
+        } = validateMessageBody(body);
 
-        // 4. Connect to MongoDB
+        // 4. Connect to MongoDB.
         await Connect();
 
-        // 5. Start a MongoDB transaction
+        // 5. Start MongoDB transaction.
         const session = await mongoose.startSession();
 
         let createdMessageId: mongoose.Types.ObjectId | null = null;
         let recipientUserId: string | null = null;
+
         try {
             await session.withTransaction(async () => {
-                // 6. Verify membership and atomically allocate sequence
+                // 6. Verify membership and atomically allocate sequence.
                 const conversation = await Conversation.findOneAndUpdate(
                     {
                         _id: conversationId,
@@ -484,15 +578,17 @@ export const POST = withErrorHandler(
                 ).select("_id participants lastMessageSeq");
 
                 if (!conversation) {
-                    throw createApiError("Conversation not found.", 404);
+                    throw createApiError(
+                        "Conversation not found.",
+                        404
+                    );
                 }
 
-                // 7. Find the recipient
+                // 7. Find recipient.
                 const recipientId = conversation.participants.find(
                     (participantId: mongoose.Types.ObjectId) =>
                         participantId.toString() !== userId
                 );
-
 
                 if (!recipientId) {
                     throw createApiError(
@@ -500,9 +596,28 @@ export const POST = withErrorHandler(
                         404
                     );
                 }
+
                 recipientUserId = recipientId.toString();
 
-                // 8. Create the message
+                // 8. Validate original message if this is a reply.
+                if (replyTo) {
+                    const originalMessage = await Message.findOne({
+                        _id: replyTo,
+                        conversationId: conversation._id,
+                        deletedForEveryoneAt: null,
+                    })
+                        .select("_id")
+                        .session(session);
+
+                    if (!originalMessage) {
+                        throw createApiError(
+                            "Original message not found or is no longer available.",
+                            404
+                        );
+                    }
+                }
+
+                // 9. Create message.
                 const newMessage = new Message({
                     conversationId: conversation._id,
                     senderId: new mongoose.Types.ObjectId(userId),
@@ -510,11 +625,14 @@ export const POST = withErrorHandler(
                     messageType,
                     content,
                     attachments,
+                    replyTo: replyTo
+                        ? new mongoose.Types.ObjectId(replyTo)
+                        : null,
                 });
 
                 await newMessage.save({ session });
 
-                // 9. Update conversation metadata and recipient unread count
+                // 10. Update conversation metadata and recipient unread count.
                 const updateResult = await Conversation.updateOne(
                     {
                         _id: conversation._id,
@@ -539,39 +657,42 @@ export const POST = withErrorHandler(
                     }
                 );
 
-
                 if (updateResult.modifiedCount !== 1) {
                     throw new Error(
                         "Failed to update conversation metadata."
                     );
                 }
 
-                // Save the ID for retrieving the populated message after commit
+                // Save ID for retrieval after transaction commits.
                 createdMessageId = newMessage._id;
             });
         } finally {
             await session.endSession();
         }
 
-        // 10. Retrieve the created message with populated sender
+        // 11. Retrieve created message with populated sender and reply.
         if (!createdMessageId) {
             throw new Error("Message creation failed.");
         }
 
         const sentMessage = await Message.findById(createdMessageId)
-            .populate("senderId", "_id username imageUrl")
+            .populate(populateMessage)
             .lean();
 
         if (!sentMessage) {
-            throw new Error("Created message could not be retrieved.");
+            throw new Error(
+                "Created message could not be retrieved."
+            );
         }
 
-        // 11. Validate recipient ID
+        // 12. Validate recipient ID.
         if (!recipientUserId) {
-            throw new Error("Conversation recipient could not be identified.");
+            throw new Error(
+                "Conversation recipient could not be identified."
+            );
         }
 
-        // 12. Get the recipient's updated unread count
+        // 13. Get recipient's updated unread count.
         const updatedConversation = await Conversation.findById(conversationId)
             .select("memberStates")
             .lean();
@@ -582,17 +703,18 @@ export const POST = withErrorHandler(
 
         const recipientUnreadCount = recipientState?.unreadCount ?? 0;
 
-        // 13. Publish real-time events after the transaction commits
-        const conversationChannel = `private-conversation-${conversationId}`;
-        const recipientChannel = `private-user-${recipientUserId}`;
+        // 14. Publish real-time events after transaction commits.
+        const conversationChannel =
+            `private-conversation-${conversationId}`;
+
+        const recipientChannel =
+            `private-user-${recipientUserId}`;
 
         const realtimePayload = {
             conversationId,
             message: sentMessage,
         };
 
-        // Publish to both channels.
-        // Pusher errors must not turn a successfully saved message into an API failure.
         const pusherResults = await Promise.allSettled([
             pusher.trigger(
                 conversationChannel,
@@ -613,13 +735,17 @@ export const POST = withErrorHandler(
         pusherResults.forEach((result, index) => {
             if (result.status === "rejected") {
                 console.error(
-                    `Pusher event ${index === 0 ? "new-message" : "new-message-notification"} failed:`,
+                    `Pusher event ${
+                        index === 0
+                            ? "new-message"
+                            : "new-message-notification"
+                    } failed:`,
                     result.reason
                 );
             }
         });
 
-        // 14. Return the created message
+        // 15. Return created message.
         return NextResponse.json(
             {
                 success: true,

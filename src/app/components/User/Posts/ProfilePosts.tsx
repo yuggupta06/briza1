@@ -353,7 +353,7 @@ function ProfilePostsContent({
   // ---------------------------------------
 
   return (
-    <div className="space-y-6 pt-4 sm:pt-6">
+    <div className="space-y-6 pt-4 pb-10 sm:pt-6 md:pb-0">
       <div className="grid min-w-0 grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-3 md:gap-5">
         {visiblePosts.map((post) => (
           <PostCard

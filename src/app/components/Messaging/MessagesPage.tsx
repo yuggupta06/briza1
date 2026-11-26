@@ -535,6 +535,10 @@ export default function MessagesPage() {
     setDirectConversation(null);
 
     router.replace("/messages", { scroll: false });
+    // Refresh the inbox when returning to the conversation list.
+  if (conversations.length === 0 && !isLoading) {
+    void mutate();
+  }
   };
 
   if (!currentUser) {
@@ -554,7 +558,7 @@ export default function MessagesPage() {
           ? `calc(${viewportHeight}px - 64px)`
           : "calc(100dvh - 64px)",
       }}
-      className="flex min-h-0 w-full overflow-hidden border border-outline-variant bg-surface"
+      className="flex min-h-0 w-full overflow-hidden border border-outline-variant bg-surface "
     >
       {/* Inbox sidebar */}
       <aside

@@ -1,6 +1,5 @@
 
 import type {
-  
   AttachmentType,
 } from "./message";
 
@@ -9,25 +8,62 @@ export interface MessagingUser {
   username: string;
   imageUrl: string;
 }
+
 export type MessageContentType =
-| "text"
-| "image"
-| "video"
-| "file";
+  | "text"
+  | "image"
+  | "video"
+  | "file";
+
+// Original message information displayed inside a reply.
+export interface MessagingReplyMessage {
+  _id: string;
+
+  senderId: MessagingUser | string;
+
+  messageType: MessageContentType;
+
+  content: string | null;
+
+  attachments: AttachmentType[];
+
+  createdAt: string;
+}
+
+// Tracks an individual user's deletion.
+export interface MessagingDeletedFor {
+  userId: string;
+  deletedAt: string;
+}
 
 export interface MessagingMessage {
   _id: string;
+
   conversationId: string;
 
   senderId: MessagingUser | string;
 
   sequence: number;
+
   messageType: MessageContentType;
+
   content: string | null;
+
   attachments: AttachmentType[];
 
   editedAt: string | null;
+
+  // ObjectId when not populated, object when populated.
+  replyTo: string | MessagingReplyMessage | null;
+
+  deletedFor: MessagingDeletedFor[];
+
+  deletedForEveryoneAt: string | null;
+
+  deletedForEveryoneBy: string | null;
+
   createdAt: string;
+
   updatedAt: string;
 }
 
@@ -40,6 +76,7 @@ export interface ConversationInboxItem {
   lastReadSeq: number;
   otherParticipantLastReadSeq: number;
 }
+
 export interface CreateConversationResponse {
   success: boolean;
   message: string;
@@ -47,6 +84,7 @@ export interface CreateConversationResponse {
     _id: string;
   };
 }
+
 export interface ConversationsResponse {
   success: boolean;
   conversations: ConversationInboxItem[];

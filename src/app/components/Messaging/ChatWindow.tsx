@@ -18,6 +18,7 @@ import {
     Loader2,
     MessageCircle,
     ImagePlus,
+    X
 } from "lucide-react";
 
 import { Avatar } from "@/app/components/ui/avatar";
@@ -138,12 +139,17 @@ export default function ChatWindow({
     const loadingNewerRef = useRef(false);
     const previousConversationIdRef = useRef(conversationId);
 
+
+    // reply state
+    const [replyingTo, setReplyingTo] =
+        useState<MessagingMessage | null>(null);
+
     // Reset conversation-specific UI when switching conversations.
     useEffect(() => {
         if (previousConversationIdRef.current === conversationId) {
             return;
         }
-
+        setReplyingTo(null);
         previousConversationIdRef.current = conversationId;
 
         initialScrollDoneRef.current = false;
@@ -551,6 +557,7 @@ export default function ChatWindow({
                 messageType,
                 content: trimmedContent || null,
                 attachments,
+                replyTo: replyingTo?._id ?? null,
             });
 
             await addMessage(response.sentMessage);
@@ -561,6 +568,7 @@ export default function ChatWindow({
             );
 
             setContent("");
+            setReplyingTo(null);
             setSelectedFiles([]);
 
             if (fileInputRef.current) {
@@ -596,7 +604,7 @@ export default function ChatWindow({
         <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
 
             {/* Chat header */}
-            <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-outline-variant px-4 py-3">
+            <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-outline-variant px-4 py-3 ">
                 <button
                     type="button"
                     onClick={onBack}
@@ -704,6 +712,7 @@ export default function ChatWindow({
                                             senderId === currentUserId &&
                                             message.sequence <= lastReadSeq
                                         }
+                                        onReply={() => setReplyingTo(message)}
                                     />
                                 </div>
                             );
@@ -743,6 +752,43 @@ export default function ChatWindow({
                 onSubmit={handleSendMessage}
                 className="relative z-10 flex shrink-0 flex-col gap-2 border-t border-outline-variant bg-surface p-3 sm:p-4"
             >
+                {replyingTo && (
+                    <div className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container p-3">
+                        <div className="min-w-0 flex-1 border-l-[3px] border-primary pl-3">
+                            <p className="text-xs font-semibold text-primary">
+                                Replying to{" "}
+                                {typeof replyingTo.senderId === "string"
+                                    ? replyingTo.senderId === currentUserId
+                                        ? "yourself"
+                                        : participant.username
+                                    : replyingTo.senderId._id.toString() === currentUserId
+                                        ? "yourself"
+                                        : participant.username}
+                            </p>
+
+                            <p className="mt-1 truncate text-sm text-on-surface-variant">
+                                {replyingTo.content ||
+                                    (replyingTo.messageType === "image"
+                                        ? "Photo"
+                                        : replyingTo.messageType === "video"
+                                            ? "Video"
+                                            : replyingTo.messageType === "file"
+                                                ? replyingTo.attachments[0]?.name ?? "File"
+                                                : "Message")}
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setReplyingTo(null)}
+                            aria-label="Cancel reply"
+                            disabled={isSending}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                        >
+                            <X size={17} />
+                        </button>
+                    </div>
+                )}
                 {/* Selected media preview */}
                 <MediaPreview
                     files={selectedFiles}
