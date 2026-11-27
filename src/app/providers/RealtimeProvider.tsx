@@ -28,6 +28,32 @@ type MessagesReadPayload = {
   lastReadMessageId: string | null;
   lastReadSeq: number;
 };
+type MessagesDeletedPayload = {
+  conversationId: string;
+  messageIds: string[];
+  deleteFor: "everyone";
+  deletedBy: string;
+   unreadCounts: Record<string, number>;
+};
+
+
+type MessagesDeletedInboxPayload = {
+  conversationId: string;
+  messageIds: string[];
+  deleteFor: "everyone";
+  deletedBy: string;
+
+  // The latest remaining message, or null if the conversation is empty.
+  lastMessage: MessagingMessage | null;
+  lastMessageAt: string | null;
+  lastMessageSeq: number;
+
+  // This is specific to the user channel receiving this event.
+  unreadCount: number;
+
+  // False means the deleted messages did not include the latest message.
+  previewChanged: boolean;
+};
 
 type RealtimeEvents = {
   // User channel events
@@ -38,6 +64,7 @@ type RealtimeEvents = {
   "new-message-notification": MessageEventPayload;
 
   "messages-read-notification": MessagesReadPayload;
+  "messages-deleted-inbox": MessagesDeletedInboxPayload;
 
   "new-comment": {
     comment: CommentWithAuthor;
@@ -53,6 +80,7 @@ type RealtimeEvents = {
   "new-message": MessageEventPayload;
 
   "messages-read": MessagesReadPayload;
+  "messages-deleted": MessagesDeletedPayload;
 };
 
 type EventName = keyof RealtimeEvents;
@@ -61,13 +89,14 @@ type UserEventName =
   | "new-notification"
   | "new-message-notification"
   | "messages-read-notification"
+  | "messages-deleted-inbox"
   | "new-comment"
   | "new-reply"
   | "new-post";
 
 type PostEventName = "new-comment" | "new-reply";
 
-type ConversationEventName = "new-message" | "messages-read";
+type ConversationEventName = "new-message" | "messages-read" | "messages-deleted";
 
 export type EventHandler<E extends EventName> = (
   payload: RealtimeEvents[E]
@@ -106,6 +135,8 @@ const EVENT_NAMES: EventName[] = [
   "new-post",
   "new-message",
   "messages-read",
+  "messages-deleted",
+  "messages-deleted-inbox",
 ];
 
 type Props = {

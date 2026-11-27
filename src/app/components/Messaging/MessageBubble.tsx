@@ -8,8 +8,11 @@ import {
   CheckCheck,
   Play,
   Reply,
+  ListChecks,
+  MoreVertical,
 } from "lucide-react";
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -25,7 +28,15 @@ interface MessageBubbleProps {
   message: MessagingMessage;
   currentUserId: string;
   isSeen?: boolean;
-  onReply: () => void;
+  onReply: (message: MessagingMessage) => void;
+  isSelected: boolean;
+  isSelectionMode: boolean;
+  onToggleSelection: (messageId: string) => void;
+  onStartSelection: (messageId: string) => void;
+
+  isMenuOpen: boolean;
+  onMenuToggle: () => void;
+  onMenuClose: () => void;
 }
 
 interface VideoMessageProps {
@@ -34,9 +45,13 @@ interface VideoMessageProps {
 
 const MAX_SWIPE_DISTANCE = 76;
 const REPLY_THRESHOLD = 55;
-const SWIPE_DIRECTION_THRESHOLD = 8;
+const SWIPE_DIRECTION_THRESHOLD = 12;
+const LONG_PRESS_MOVE_THRESHOLD = 15;
+const LONG_PRESS_DURATION = 600;
 
-function VideoMessage({ url }: VideoMessageProps) {
+const VideoMessage = memo(function VideoMessage({
+  url,
+}: VideoMessageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -56,10 +71,7 @@ function VideoMessage({ url }: VideoMessageProps) {
       }
     };
 
-    document.addEventListener(
-      "fullscreenchange",
-      handleFullscreenChange
-    );
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
 
     return () => {
       document.removeEventListener(
@@ -146,7 +158,7 @@ function VideoMessage({ url }: VideoMessageProps) {
       )}
     </div>
   );
-}
+});
 
 function getSenderName(
   senderId: MessagingReplyMessage["senderId"],
@@ -181,11 +193,18 @@ function getReplyPreview(message: MessagingReplyMessage) {
   return "Message";
 }
 
-export default function MessageBubble({
+function MessageBubble({
   message,
   currentUserId,
   isSeen = false,
   onReply,
+  isSelected,
+  isSelectionMode,
+  onToggleSelection,
+  onStartSelection,
+  isMenuOpen,
+  onMenuToggle,
+  onMenuClose,
 }: MessageBubbleProps) {
   const touchStartRef = useRef<{
     x: number;
@@ -195,6 +214,12 @@ export default function MessageBubble({
   const swipeDirectionRef = useRef<
     "horizontal" | "vertical" | null
   >(null);
+
+  const longPressTimerRef = useRef<
+    ReturnType<typeof setTimeout> | null
+  >(null);
+
+  const longPressTriggeredRef = useRef(false);
 
   const [slideDistance, setSlideDistance] = useState(0);
 
@@ -206,11 +231,15 @@ export default function MessageBubble({
   const isOwnMessage = senderId === currentUserId;
   const hasAttachments = message.attachments.length > 0;
 
+  const hasReply = Boolean(message.replyTo);
+
   const replyMessage =
     message.replyTo &&
-    typeof message.replyTo !== "string"
+      typeof message.replyTo !== "string"
       ? message.replyTo
       : null;
+
+  const isReplyUnavailable = hasReply && !replyMessage;
 
   const formattedTime = new Date(message.createdAt).toLocaleTimeString(
     "en-US",
@@ -221,11 +250,54 @@ export default function MessageBubble({
     }
   );
 
-  // Start tracking the swipe.
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      event.preventDefault();
+      return;
+    }
+
+    if (isSelectionMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggleSelection(message._id);
+    }
+  };
+
+  const handleMenuClick = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation();
+    onMenuToggle();
+  };
+
+  const handleMenuReply = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation();
+    onMenuClose();
+    onReply(message);
+  };
+
+  const handleMenuDelete = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation();
+    onMenuClose();
+    onStartSelection(message._id);
+  };
+
   const handleTouchStart = (
     event: TouchEvent<HTMLDivElement>
   ) => {
-    if (event.touches.length !== 1) return;
+    if (event.touches.length !== 1 || isSelectionMode) return;
 
     const touch = event.touches[0];
 
@@ -235,9 +307,17 @@ export default function MessageBubble({
     };
 
     swipeDirectionRef.current = null;
+    longPressTriggeredRef.current = false;
+
+    clearLongPressTimer();
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setSlideDistance(0);
+      onStartSelection(message._id);
+    }, LONG_PRESS_DURATION);
   };
 
-  // Move the message along with the finger.
   const handleTouchMove = (
     event: TouchEvent<HTMLDivElement>
   ) => {
@@ -250,7 +330,13 @@ export default function MessageBubble({
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
 
-    // Determine whether the gesture is horizontal or vertical.
+    if (
+      Math.abs(deltaX) > LONG_PRESS_MOVE_THRESHOLD ||
+      Math.abs(deltaY) > LONG_PRESS_MOVE_THRESHOLD
+    ) {
+      clearLongPressTimer();
+    }
+
     if (!swipeDirectionRef.current) {
       if (
         Math.abs(deltaX) < SWIPE_DIRECTION_THRESHOLD &&
@@ -265,12 +351,10 @@ export default function MessageBubble({
           : "horizontal";
     }
 
-    // Leave normal vertical scrolling untouched.
     if (swipeDirectionRef.current === "vertical") {
       return;
     }
 
-    // Only allow rightward movement.
     const distance = Math.max(
       0,
       Math.min(deltaX, MAX_SWIPE_DISTANCE)
@@ -279,22 +363,28 @@ export default function MessageBubble({
     setSlideDistance(distance);
   };
 
-  // Release the message and trigger reply if threshold is reached.
   const handleTouchEnd = () => {
-    const shouldReply = slideDistance >= REPLY_THRESHOLD;
+    clearLongPressTimer();
+
+    const wasLongPress = longPressTriggeredRef.current;
+    const shouldReply =
+      !isSelectionMode &&
+      !wasLongPress &&
+      slideDistance >= REPLY_THRESHOLD;
 
     touchStartRef.current = null;
     swipeDirectionRef.current = null;
 
-    // Reset the position. CSS transition handles the animation.
     setSlideDistance(0);
 
     if (shouldReply) {
-      onReply();
+      onReply(message);
     }
   };
 
   const handleTouchCancel = () => {
+    clearLongPressTimer();
+
     touchStartRef.current = null;
     swipeDirectionRef.current = null;
     setSlideDistance(0);
@@ -305,6 +395,12 @@ export default function MessageBubble({
     1
   );
 
+  const handleContextMenu = (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault();
+  };
+
   return (
     <div
       data-message-sequence={message.sequence}
@@ -312,26 +408,23 @@ export default function MessageBubble({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
-      className={`flex w-full touch-pan-y ${
-        isOwnMessage ? "justify-end" : "justify-start"
-      }`}
+      onContextMenu={handleContextMenu}
+      onClick={handleClick}
+      className={`flex w-full touch-pan-y ${isOwnMessage ? "justify-end" : "justify-start"
+        }`}
     >
       <div className="relative max-w-[78%] sm:max-w-[65%]">
-
-        {/* Mobile swipe reply indicator */}
         <div
           className="pointer-events-none absolute -left-9 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-white transition-opacity duration-100 sm:hidden"
           style={{
             opacity: replyIconOpacity,
-            transform: `translateY(-50%) scale(${
-              0.75 + replyIconOpacity * 0.25
-            })`,
+            transform: `translateY(-50%) scale(${0.75 + replyIconOpacity * 0.25
+              })`,
           }}
         >
           <Reply size={15} />
         </div>
 
-        {/* Message bubble */}
         <div
           style={{
             transform: `translateX(${slideDistance}px)`,
@@ -340,47 +433,95 @@ export default function MessageBubble({
                 ? "none"
                 : "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
           }}
-          className={`group relative rounded-2xl px-3 py-2 shadow-sm ${
-            isOwnMessage
+          className={`group relative rounded-2xl px-3 py-2 shadow-sm transition-all ${isOwnMessage
               ? "rounded-br-sm bg-[#818df8]/40 text-white"
               : "rounded-bl-sm bg-surface-container text-on-surface"
-          }`}
+            } ${isSelected
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-surface"
+              : ""
+            } ${isSelectionMode ? "cursor-pointer" : ""
+            }`}
         >
-          {/* Laptop reply action */}
-          <button
-            type="button"
-            onClick={onReply}
-            aria-label="Reply to message"
-            title="Reply"
-            className="absolute -top-3 right-2 z-10 hidden h-7 w-7 items-center justify-center rounded-full border border-outline-variant bg-surface text-on-surface shadow-sm opacity-0 transition-opacity hover:bg-surface-container group-hover:opacity-100 sm:flex"
-          >
-            <Reply size={14} />
-          </button>
+          {!isSelectionMode && (
+            <div
+              className={`absolute top-1/2 z-20 hidden -translate-y-1/2 sm:block ${isOwnMessage ? "-left-9" : "-right-9"
+                }`}
+            >
+              <button
+                type="button"
+                onClick={handleMenuClick}
+                aria-label="Message options"
+                title="Message options"
+                className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-surface text-on-surface transition-opacity hover:bg-surface-container ${isMenuOpen
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100"
+                  }`}
+              >
+                <MoreVertical size={16} />
+              </button>
 
-          {/* Quoted original message */}
-          {replyMessage && (
-            <div className="mb-2 overflow-hidden rounded-lg border-l-[3px] border-primary bg-black/10 px-2.5 py-2 dark:bg-white/10">
-              <p className="truncate text-xs font-semibold">
-                {getSenderName(
-                  replyMessage.senderId,
-                  currentUserId
-                )}
-              </p>
+              {isMenuOpen && (
+                <div
+                  className={`absolute top-0 z-30 w-32 overflow-hidden rounded-lg border border-outline-variant bg-surface py-1 shadow-lg ${
+  isOwnMessage
+    ? "right-full mr-2"
+    : "left-full ml-2"
+}`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={handleMenuReply}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container"
+                  >
+                    <Reply size={15} />
+                    Reply
+                  </button>
 
-              <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap wrap-break-word text-xs opacity-80">
-                {getReplyPreview(replyMessage)}
-              </p>
+                  <button
+                    type="button"
+                    onClick={handleMenuDelete}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-error transition-colors hover:bg-surface-container"
+                  >
+                    <ListChecks size={15} />
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Text content */}
+          {hasReply && (
+            <div className="mb-2 overflow-hidden rounded-lg border-l-[3px] border-primary bg-black/10 px-2.5 py-2 dark:bg-white/10">
+              {replyMessage ? (
+                <>
+                  <p className="truncate text-xs font-semibold">
+                    {getSenderName(
+                      replyMessage.senderId,
+                      currentUserId
+                    )}
+                  </p>
+
+                  <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap wrap-break-word text-xs opacity-80">
+                    {getReplyPreview(replyMessage)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs italic opacity-60">
+                  {isReplyUnavailable
+                    ? "Not available"
+                    : "Message unavailable"}
+                </p>
+              )}
+            </div>
+          )}
+
           {message.content && (
             <p className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
               {message.content}
             </p>
           )}
 
-          {/* Attachments */}
           {hasAttachments && (
             <div className="mt-1 flex flex-col gap-2">
               {message.attachments.map((attachment, index) => {
@@ -433,13 +574,11 @@ export default function MessageBubble({
             </div>
           )}
 
-          {/* Timestamp and read receipt */}
           <div
-            className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
-              isOwnMessage
+            className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${isOwnMessage
                 ? "text-white/70"
                 : "text-on-surface-variant"
-            }`}
+              }`}
           >
             <span>{formattedTime}</span>
 
@@ -463,3 +602,5 @@ export default function MessageBubble({
     </div>
   );
 }
+
+export default memo(MessageBubble);

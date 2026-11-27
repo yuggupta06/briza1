@@ -1,4 +1,3 @@
-
 import { ConversationType } from "@/types/conversation";
 import mongoose, { Schema, model, models } from "mongoose";
 
@@ -47,7 +46,7 @@ const conversationSchema = new Schema(
         validator: (participants: mongoose.Types.ObjectId[]) =>
           participants.length === 2 &&
           participants[0].toString() !==
-            participants[1].toString(),
+          participants[1].toString(),
         message: "A conversation must have exactly two different participants.",
       },
     },
@@ -76,6 +75,13 @@ const conversationSchema = new Schema(
       default: 0,
       min: 0,
     },
+    // Monotonically increasing sequence allocator.
+    // Never decrease this value, even when messages are deleted.
+    nextMessageSeq: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
 
     // Individual state for each participant.
     memberStates: {
@@ -85,7 +91,7 @@ const conversationSchema = new Schema(
         validator: (states: { userId: mongoose.Types.ObjectId }[]) =>
           states.length === 2 &&
           states[0].userId.toString() !==
-            states[1].userId.toString(),
+          states[1].userId.toString(),
         message: "A conversation must have read state for both participants.",
       },
     },
@@ -94,6 +100,7 @@ const conversationSchema = new Schema(
     timestamps: true,
   }
 );
+
 conversationSchema.index(
   { participantKey: 1 },
   { unique: true }

@@ -1,268 +1,334 @@
 
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthUser } from "@/backend/lib/auth/getAuthUser";
 import { Connect } from "@/backend/lib/dbConnect";
 import { withErrorHandler } from "@/backend/lib/errors/withErrorHandler";
 import { pusher } from "@/backend/lib/pusher";
-
 import Conversation from "@/backend/models/conversation";
 import Message from "@/backend/models/message";
+import { MessageType } from "@/types/message";
 
-type RouteContext = {
-    params: Promise<{
-        conversationId: string;
-    }>;
-};
+export const DELETE = withErrorHandler(
+    async (request: NextRequest) => {
+        // 1. Authenticate user.
+        const auth = await getAuthUser();
 
-type DeleteMode = "me" | "everyone";
+        if (!auth?.userId || !Types.ObjectId.isValid(auth.userId)) {
+            return NextResponse.json(
+                { success: false, message: "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
-const MAX_MESSAGES_PER_REQUEST = 100;
+        const currentUserId = new Types.ObjectId(auth.userId);
+        const currentUserIdString = currentUserId.toString();
 
-function createApiError(message: string, statusCode: number) {
-    return Object.assign(new Error(message), { statusCode });
-}
-
-function validateBody(body: unknown): {
-    messageIds: string[];
-    mode: DeleteMode;
-} {
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-        throw createApiError("Invalid request body.", 400);
-    }
-
-    const data = body as Record<string, unknown>;
-
-    if (!Array.isArray(data.messageIds) || data.messageIds.length === 0) {
-        throw createApiError("Select at least one message.", 400);
-    }
-
-    if (data.messageIds.length > MAX_MESSAGES_PER_REQUEST) {
-        throw createApiError(
-            `You can delete at most ${MAX_MESSAGES_PER_REQUEST} messages at once.`,
-            400
+        // 2. Extract conversation ID.
+        const match = request.nextUrl.pathname.match(
+            /\/api\/conversations\/([^/]+)\/messages\/delete\/?$/
         );
-    }
 
-    const messageIds = data.messageIds;
+        const conversationId = match?.[1];
 
-    if (
-        !messageIds.every(
-            (id) => typeof id === "string" && mongoose.isValidObjectId(id)
-        )
-    ) {
-        throw createApiError("One or more message IDs are invalid.", 400);
-    }
-
-    const uniqueMessageIds = [...new Set(messageIds)];
-
-    if (uniqueMessageIds.length !== messageIds.length) {
-        throw createApiError("Duplicate message IDs are not allowed.", 400);
-    }
-
-    if (data.mode !== "me" && data.mode !== "everyone") {
-        throw createApiError("Invalid deletion mode.", 400);
-    }
-
-    return {
-        messageIds,
-        mode: data.mode,
-    };
-}
-
-export const POST = withErrorHandler(
-    async (req: NextRequest, { params }: RouteContext) => {
-        // 1. Authenticate user
-        const { userId } = await getAuthUser();
-
-        if (!mongoose.isValidObjectId(userId)) {
-            throw createApiError("Invalid authenticated user.", 401);
+        if (!conversationId || !Types.ObjectId.isValid(conversationId)) {
+            return NextResponse.json(
+                { success: false, message: "Invalid conversation ID" },
+                { status: 400 }
+            );
         }
 
-        // 2. Validate conversation ID
-        const { conversationId } = await params;
+        const conversationObjectId = new Types.ObjectId(conversationId);
 
-        if (!mongoose.isValidObjectId(conversationId)) {
-            throw createApiError("Invalid conversation ID.", 400);
-        }
-
-        // 3. Parse request body
-        let body: unknown;
+        // 3. Validate request body.
+        let body: {
+            messageIds?: string[];
+            deleteFor?: "me" | "everyone";
+        };
 
         try {
-            body = await req.json();
+            body = await request.json();
         } catch {
-            throw createApiError("Invalid JSON request body.", 400);
+            return NextResponse.json(
+                { success: false, message: "Invalid request body" },
+                { status: 400 }
+            );
         }
 
-        const { messageIds, mode } = validateBody(body);
+        const { messageIds, deleteFor } = body;
 
-        // 4. Connect database
+        if (
+            !Array.isArray(messageIds) ||
+            messageIds.length === 0 ||
+            messageIds.length > 100 ||
+            !messageIds.every(
+                (id) =>
+                    typeof id === "string" &&
+                    /^[a-f\d]{24}$/i.test(id)
+            ) ||
+            !["me", "everyone"].includes(deleteFor ?? "")
+        ) {
+            return NextResponse.json(
+                { success: false, message: "Invalid deletion request" },
+                { status: 400 }
+            );
+        }
+
+        const uniqueMessageIds = [...new Set(messageIds)];
+
+        const messageObjectIds = uniqueMessageIds.map(
+            (id) => new Types.ObjectId(id)
+        );
+
         await Connect();
 
         const session = await mongoose.startSession();
 
-        let deletedMessageIds: string[] = [];
+        // Data required for realtime events after the transaction.
+        let participantIds: string[] = [];
+        let unreadCounts: Record<string, number> = {};
+
+        let lastMessageChanged = false;
+
+        let latestMessageId: string | null = null;
+let latestMessageAt: Date | null = null;
+let lastMessageSeq = 0;
 
         try {
             await session.withTransaction(async () => {
-                // 5. Verify conversation membership
+                // 4. Verify conversation membership.
                 const conversation = await Conversation.findOne({
-                    _id: conversationId,
-                    participants: userId,
-                })
-                    .select("_id participants")
-                    .session(session)
-                    .lean();
+                    _id: conversationObjectId,
+                    participants: currentUserId,
+                }).session(session);
 
                 if (!conversation) {
-                    throw createApiError("Conversation not found.", 404);
+                    const error = new Error("Conversation not found");
+                    Object.assign(error, { statusCode: 404 });
+                    throw error;
                 }
 
-                const objectIds = messageIds.map(
-                    (id) => new mongoose.Types.ObjectId(id)
-                );
-
-                // 6. Find selected messages belonging to this conversation
-                const messages = await Message.find({
-                    _id: { $in: objectIds },
-                    conversationId,
-                    deletedForEveryone: { $ne: true },
+                // 5. Find selected messages.
+                const selectedMessages = await Message.find({
+                    _id: { $in: messageObjectIds },
+                    conversationId: conversationObjectId,
                 })
-                    .select("_id senderId")
+                    .select("_id senderId sequence createdAt")
                     .session(session)
                     .lean();
 
-                if (messages.length !== messageIds.length) {
-                    throw createApiError(
-                        "Some selected messages are unavailable or already deleted.",
-                        404
+                if (selectedMessages.length !== uniqueMessageIds.length) {
+                    const error = new Error(
+                        "One or more messages were not found"
                     );
+                    Object.assign(error, { statusCode: 404 });
+                    throw error;
                 }
 
-                // 7. Validate ownership for Delete for everyone
-                if (mode === "everyone") {
-                    const hasUnauthorizedMessage = messages.some(
+                // 6. Delete for me.
+                // No Pusher events are sent for this operation.
+                if (deleteFor === "me") {
+                    await Message.updateMany(
+                        {
+                            _id: { $in: messageObjectIds },
+                            conversationId: conversationObjectId,
+                            "deletedFor.userId": {
+                                $ne: currentUserId,
+                            },
+                        },
+                        {
+                            $push: {
+                                deletedFor: {
+                                    userId: currentUserId,
+                                    deletedAt: new Date(),
+                                },
+                            },
+                        },
+                        { session }
+                    );
+
+                    return;
+                }
+
+                // 7. Delete for everyone: only own messages.
+                const allMessagesAreOwn = selectedMessages.every(
+                    (message) =>
+                        message.senderId.toString() === currentUserIdString
+                );
+
+                if (!allMessagesAreOwn) {
+                    const error = new Error(
+                        "You can only delete your own messages for everyone"
+                    );
+                    Object.assign(error, { statusCode: 403 });
+                    throw error;
+                }
+
+                // 8. Check whether the current inbox preview is being deleted.
+                const previousLastMessageId =
+                    conversation.lastMessageId?.toString() ?? null;
+
+                lastMessageChanged =
+                    previousLastMessageId !== null &&
+                    uniqueMessageIds.includes(previousLastMessageId);
+
+                // 9. Recalculate unread counts.
+                // A member's unread count includes incoming messages
+                // received after their last-read sequence.
+                for (const memberState of conversation.memberStates) {
+                    const memberId = memberState.userId.toString();
+
+                    const lastReadSeq = Number(
+                        memberState.lastReadSeq ?? 0
+                    );
+
+                    const deletedUnreadCount = selectedMessages.filter(
                         (message) =>
-                            message.senderId.toString() !== userId
-                    );
+                            message.senderId.toString() !== memberId &&
+                            message.sequence > lastReadSeq
+                    ).length;
 
-                    if (hasUnauthorizedMessage) {
-                        throw createApiError(
-                            "You can only delete your own messages for everyone.",
-                            403
-                        );
-                    }
-                }
-
-                // 8. Perform deletion
-                if (mode === "me") {
-                    await Message.updateMany(
-                        {
-                            _id: { $in: objectIds },
-                            conversationId,
-                            deletedFor: { $ne: userId },
-                            deletedForEveryone: { $ne: true },
-                        },
-                        {
-                            $addToSet: {
-                                deletedFor: new mongoose.Types.ObjectId(userId),
-                            },
-                        },
-                        { session }
-                    );
-                } else {
-                    await Message.updateMany(
-                        {
-                            _id: { $in: objectIds },
-                            conversationId,
-                            senderId: new mongoose.Types.ObjectId(userId),
-                            deletedForEveryone: { $ne: true },
-                        },
-                        {
-                            $set: {
-                                deletedForEveryone: true,
-                                deletedAt: new Date(),
-                                content: null,
-                                attachments: [],
-                            },
-                        },
-                        { session }
+                    memberState.unreadCount = Math.max(
+                        0,
+                        memberState.unreadCount - deletedUnreadCount
                     );
                 }
 
-                deletedMessageIds = messageIds;
+                // 10. Physically delete selected messages.
+                await Message.deleteMany({
+                    _id: { $in: messageObjectIds },
+                    conversationId: conversationObjectId,
+                }).session(session);
+
+                // 11. Find the latest remaining message.
+                const latestMessage = await Message.findOne({
+                    conversationId: conversationObjectId,
+                })
+                    .sort({ sequence: -1 })
+                    .select("_id createdAt sequence")
+                    .session(session)
+                    .lean<MessageType>();
+
+                // 12. Update conversation preview metadata.
+                conversation.lastMessageId = latestMessage?._id ?? null;
+                conversation.lastMessageAt =
+                    latestMessage?.createdAt ?? null;
+
+                // Keep lastMessageSeq aligned with the latest existing message.
+                // Do NOT modify nextMessageSeq: it is the monotonic sequence allocator.
+                conversation.lastMessageSeq =
+                    latestMessage?.sequence ?? 0;
+
+                await conversation.save({ session });
+
+                // 13. Capture participant IDs.
+                participantIds = conversation.participants.map(
+                    (id: Types.ObjectId) => id.toString()
+                );
+
+                // Capture each participant's updated unread count.
+                unreadCounts = {};
+
+                for (const memberState of conversation.memberStates) {
+                    unreadCounts[memberState.userId.toString()] =
+                        memberState.unreadCount;
+                }
+
+                // Capture latest-message metadata for the events.
+                latestMessageId =
+                    latestMessage?._id?.toString() ?? null;
+
+                latestMessageAt =
+                    latestMessage?.createdAt ?? null;
+
+                lastMessageSeq  =
+                    latestMessage?.sequence ?? 0;
             });
         } finally {
             await session.endSession();
         }
 
-        // 9. Publish deletion event after transaction commits
-        const conversationChannel =
-            `private-conversation-${conversationId}`;
+        // 14. Publish events only for delete-for-everyone.
+        if (deleteFor === "everyone") {
+            // Fetch the latest message with its sender populated.
+            // This is used by inbox clients when the previous preview changed.
+            const latestMessage = latestMessageId
+                ? await Message.findById(latestMessageId)
+                    .populate("senderId", "_id username imageUrl")
+                    .lean()
+                : null;
 
-        const recipientId = (await Conversation.findById(conversationId)
-            .select("participants")
-            .lean())?.participants.find(
-                (participant) => participant.toString() !== userId
-            )?.toString();
+            // Active conversation synchronization.
+            const conversationPayload = {
+                conversationId,
+                messageIds: uniqueMessageIds,
+                deleteFor: "everyone" as const,
+                deletedBy: currentUserIdString,
+                unreadCounts,
+            };
 
-        const eventName =
-            mode === "everyone"
-                ? "messages-deleted-for-everyone"
-                : "messages-deleted-for-me";
-
-        const payload = {
-            conversationId,
-            messageIds: deletedMessageIds,
-            mode,
-            deletedBy: userId,
-        };
-
-        const events: Promise<unknown>[] = [
-            pusher.trigger(
-                conversationChannel,
-                eventName,
-                payload
-            ),
-        ];
-
-        // Delete-for-me only affects the current user's chat.
-        // Delete-for-everyone must notify the other participant too.
-        if (mode === "everyone" && recipientId) {
-            events.push(
+            const events: Promise<unknown>[] = [
                 pusher.trigger(
-                    `private-user-${recipientId}`,
-                    eventName,
-                    payload
-                )
-            );
-        }
+                    `private-conversation-${conversationId}`,
+                    "messages-deleted",
+                    conversationPayload
+                ),
+            ];
 
-        const results = await Promise.allSettled(events);
+            // Inbox synchronization for BOTH participants.
+            for (const participantId of participantIds) {
+                events.push(
+                    pusher.trigger(
+                        `private-user-${participantId}`,
+                        "messages-deleted-inbox",
+                        {
+                            conversationId,
+                            messageIds: uniqueMessageIds,
+                            deleteFor: "everyone" as const,
+                            deletedBy: currentUserIdString,
 
-        results.forEach((result) => {
-            if (result.status === "rejected") {
-                console.error(
-                    "Message deletion Pusher event failed:",
-                    result.reason
+                            // Only replace the preview when the previous
+                            // latest message was among the deleted messages.
+                            previewChanged: lastMessageChanged,
+
+                            lastMessage: lastMessageChanged
+                                ? latestMessage
+                                : undefined,
+
+                            lastMessageAt: lastMessageChanged
+                                ? latestMessageAt
+                                : undefined,
+
+                            lastMessageSeq,
+
+                            // Each participant receives their own unread count.
+                            unreadCount: unreadCounts[participantId] ?? 0,
+                        }
+                    )
                 );
             }
-        });
 
-        // 10. Return response
-        return NextResponse.json(
-            {
-                success: true,
-                message:
-                    mode === "me"
-                        ? "Messages deleted for you."
-                        : "Messages deleted for everyone.",
-                mode,
-                deletedMessageIds,
-            },
-            { status: 200 }
-        );
+            // The database transaction has already committed.
+            // Pusher failures must not undo the deletion.
+            const results = await Promise.allSettled(events);
+
+            results.forEach((result, index) => {
+                if (result.status === "rejected") {
+                    console.error(
+                        `Message deletion Pusher event ${index} failed:`,
+                        result.reason
+                    );
+                }
+            });
+        }
+
+        // 15. Return response.
+        return NextResponse.json({
+            success: true,
+            message: "Messages deleted successfully",
+            deletedMessageIds: uniqueMessageIds,
+            deleteFor,
+        });
     }
 );

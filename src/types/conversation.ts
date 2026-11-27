@@ -14,6 +14,7 @@ export interface ConversationType {
   lastMessageId: mongoose.Types.ObjectId | null;
   lastMessageAt: Date | null;
   lastMessageSeq: number;
+  nextMessageSeq: number;
   memberStates: {
     userId: mongoose.Types.ObjectId;
     lastReadMessageId: mongoose.Types.ObjectId | null;

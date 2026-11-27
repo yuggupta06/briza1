@@ -2,46 +2,46 @@
 "use client";
 
 import {
+    memo,
     useCallback,
     useEffect,
     useLayoutEffect,
     useRef,
     useState,
-    type FormEvent,
     type ChangeEvent,
+    type FormEvent,
 } from "react";
 
 import {
-    ArrowLeft,
     ArrowDown,
-    Send,
+    ArrowLeft,
+    ImagePlus,
     Loader2,
     MessageCircle,
-    ImagePlus,
-    X
+    Send,
+    Trash2,
+    X,
 } from "lucide-react";
 
 import { Avatar } from "@/app/components/ui/avatar";
 
-import MessageBubble from "./MessageBubble";
 import MediaPreview from "./MediaPreview";
+import MessageBubble from "./MessageBubble";
 
 import { useConversationMessages } from "@/app/hooks/messaging/useConversationMessages";
-import { useRealtime } from "@/app/providers/RealtimeProvider";
 import { useReadReceipts } from "@/app/hooks/messaging/useReadReceipts";
+import { useRealtime } from "@/app/providers/RealtimeProvider";
 
-import {
-    sendMessage,
-} from "@/backend/lib/messaging/api";
-
-import {
-    uploadMessageMedia,
-} from "@/backend/lib/messaging/uploadMessageMedia";
+import { sendMessage } from "@/backend/lib/messaging/api";
+import { uploadMessageMedia } from "@/backend/lib/messaging/uploadMessageMedia";
 
 import type {
     ConversationInboxItem,
     MessagingMessage,
 } from "@/types/messaging-ui";
+
+import { useSelectionMessage } from "@/app/hooks/messaging/useMessageSelection";
+import { useMessageDeletion } from "@/app/hooks/messaging/useMessageDeletion";
 
 interface ChatWindowProps {
     conversation: ConversationInboxItem;
@@ -58,7 +58,7 @@ interface ChatWindowProps {
     ) => void;
 }
 
-export default function ChatWindow({
+function ChatWindow({
     conversation,
     currentUserId,
     onBack,
@@ -87,14 +87,13 @@ export default function ChatWindow({
         loadNewer,
         loadLatest,
         addMessage,
+        removeMessages,
     } = useConversationMessages(conversationId, {
         initialLastReadSeq,
     });
 
     const { subscribeToConversation } = useRealtime();
 
-    // The other participant's read position.
-    // Used only for outgoing message read receipts.
     const [lastReadSeq, setLastReadSeq] = useState(
         conversation.otherParticipantLastReadSeq ?? 0
     );
@@ -104,19 +103,19 @@ export default function ChatWindow({
     );
 
     const handleReadStateChange = useCallback(
-        (count: number, lastReadSeq: number) => {
+        (count: number, readSeq: number) => {
             setUnreadCount(count);
 
             onUnreadCountChange(
                 conversationId,
                 count,
-                lastReadSeq
+                readSeq
             );
         },
         [conversationId, onUnreadCountChange]
     );
 
-    const { markVisible, markAllRead } = useReadReceipts({
+    const { markVisible, markAllRead, flushPendingRead } = useReadReceipts({
         conversationId,
         initialLastReadSeq,
         onReadStateChange: handleReadStateChange,
@@ -129,7 +128,6 @@ export default function ChatWindow({
     const [sendError, setSendError] = useState("");
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     const previousScrollHeightRef = useRef(0);
@@ -140,15 +138,80 @@ export default function ChatWindow({
     const previousConversationIdRef = useRef(conversationId);
 
 
-    // reply state
+
+    // Reply state
     const [replyingTo, setReplyingTo] =
         useState<MessagingMessage | null>(null);
 
+    // Selection hook
+    const {
+        selectedMessageIds,
+        isSelectionMode,
+        selectedCount,
+        handleToggleMessageSelection,
+        handleStartMessageSelection,
+        handleCancelSelection,
+    } = useSelectionMessage(conversationId);
+
+    // For opening one single three dot menu options
+    const [openMenuMessageId, setOpenMenuMessageId] =
+        useState<string | null>(null);
+    
+    // Stable callbacks for memoized MessageBubble components.
+    const handleReply = useCallback(
+        (message: MessagingMessage) => {
+            setReplyingTo(message);
+        },
+        []
+    );
+
+    const handleToggleSelectedMessage = useCallback(
+        (messageId: string) => {
+            handleToggleMessageSelection(messageId);
+        },
+        [handleToggleMessageSelection]
+    );
+
+    const handleStartSelectingMessage = useCallback(
+        (messageId: string) => {
+            handleStartMessageSelection(messageId);
+        },
+        [handleStartMessageSelection]
+    );
+
+    // Deletion hook
+    const {
+        isDeleteDialogOpen,
+        isDeleting,
+        deleteError,
+        canDeleteForEveryone,
+        handleDeleteClick,
+        handleCloseDeleteDialog,
+        handleDeleteForMe,
+        handleDeleteForEveryone,
+    } = useMessageDeletion({
+        conversationId,
+        currentUserId,
+        messages,
+        selectedMessageIds,
+        onDeleteSuccess: async (messageIds: string[]) => {
+            await removeMessages(messageIds);
+            handleCancelSelection();
+        },
+    });
+    // Handle back navigation
+    const handleBack = useCallback(() => {
+        // Start the pending read request before unmounting ChatWindow.
+        void flushPendingRead();
+
+        onBack();
+    }, [flushPendingRead, onBack]);
     // Reset conversation-specific UI when switching conversations.
     useEffect(() => {
         if (previousConversationIdRef.current === conversationId) {
             return;
         }
+
         setReplyingTo(null);
         previousConversationIdRef.current = conversationId;
 
@@ -165,10 +228,7 @@ export default function ChatWindow({
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
-    }, [
-        conversationId,
-        conversation.unreadCount,
-    ]);
+    }, [conversationId, conversation.unreadCount]);
 
     // Sync read position of the other participant.
     useEffect(() => {
@@ -200,6 +260,39 @@ export default function ChatWindow({
         addMessage,
     ]);
 
+    // Listen for messages deleted for everyone.
+    useEffect(() => {
+        return subscribeToConversation(
+            conversationId,
+            "messages-deleted",
+            (payload) => {
+                if (payload.deleteFor !== "everyone") return;
+
+                void removeMessages(payload.messageIds);
+
+                const updatedUnreadCount =
+                    payload.unreadCounts[currentUserId];
+
+                if (typeof updatedUnreadCount === "number") {
+                    setUnreadCount(updatedUnreadCount);
+
+                    onUnreadCountChange(
+                        conversationId,
+                        updatedUnreadCount,
+                        initialLastReadSeq
+                    );
+                }
+            }
+        );
+    }, [
+        conversationId,
+        currentUserId,
+        subscribeToConversation,
+        removeMessages,
+        onUnreadCountChange,
+        initialLastReadSeq,
+    ]);
+
     // Listen for read receipts from the other participant.
     useEffect(() => {
         return subscribeToConversation(
@@ -221,12 +314,31 @@ export default function ChatWindow({
         subscribeToConversation,
     ]);
 
-    // Load newer messages when the user reaches the loaded boundary.
+    // Escape key cancels selection mode.
+    useEffect(() => {
+        if (!isSelectionMode) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                handleCancelSelection();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [isSelectionMode, handleCancelSelection]);
+
+    // Reset selection when switching conversations.
+    useEffect(() => {
+        handleCancelSelection();
+    }, [conversationId, handleCancelSelection]);
+
+    // Load newer messages when reaching the loaded boundary.
     const handleLoadNewer = useCallback(async () => {
-        if (
-            loadingNewerRef.current ||
-            messages.length === 0
-        ) {
+        if (loadingNewerRef.current || messages.length === 0) {
             return;
         }
 
@@ -255,7 +367,6 @@ export default function ChatWindow({
         loadNewer,
     ]);
 
-    // Determine whether the user is near the bottom.
     const handleScroll = () => {
         const container = scrollContainerRef.current;
 
@@ -277,17 +388,11 @@ export default function ChatWindow({
     const handleLoadOlder = async () => {
         const container = scrollContainerRef.current;
 
-        if (
-            !container ||
-            isLoadingMore ||
-            !hasMore
-        ) {
+        if (!container || isLoadingMore || !hasMore) {
             return;
         }
 
-        previousScrollHeightRef.current =
-            container.scrollHeight;
-
+        previousScrollHeightRef.current = container.scrollHeight;
         shouldRestoreScrollRef.current = true;
 
         await loadOlder();
@@ -297,10 +402,7 @@ export default function ChatWindow({
     useLayoutEffect(() => {
         const container = scrollContainerRef.current;
 
-        if (
-            !container ||
-            !shouldRestoreScrollRef.current
-        ) {
+        if (!container || !shouldRestoreScrollRef.current) {
             return;
         }
 
@@ -311,7 +413,7 @@ export default function ChatWindow({
         shouldRestoreScrollRef.current = false;
     }, [messages]);
 
-    // Position the user at the unread boundary on initial load.
+    // Position at the unread boundary on initial load.
     useLayoutEffect(() => {
         const container = scrollContainerRef.current;
 
@@ -357,7 +459,7 @@ export default function ChatWindow({
         initialLastReadSeq,
     ]);
 
-    // Scroll to bottom for new messages only if already near bottom.
+    // Scroll to bottom for new messages if already near bottom.
     useEffect(() => {
         const container = scrollContainerRef.current;
 
@@ -418,12 +520,9 @@ export default function ChatWindow({
         });
 
         return () => observer.disconnect();
-    }, [
-        messages,
-        markVisible,
-    ]);
+    }, [messages, markVisible]);
 
-    // Jump to the latest messages and mark everything read.
+    // Jump to latest messages and mark everything read.
     const handleJumpToLatest = async () => {
         try {
             await loadLatest();
@@ -456,7 +555,6 @@ export default function ChatWindow({
     ) => {
         const files = Array.from(event.target.files ?? []);
 
-        // Allow selecting the same file again later.
         event.target.value = "";
 
         if (files.length === 0) return;
@@ -544,7 +642,6 @@ export default function ChatWindow({
 
                 messageType = isImage ? "image" : "video";
 
-                // Upload all selected files to Cloudinary.
                 attachments = await Promise.all(
                     selectedFiles.map((file) =>
                         uploadMessageMedia(file)
@@ -552,7 +649,6 @@ export default function ChatWindow({
                 );
             }
 
-            // Save the message after successful uploads.
             const response = await sendMessage(conversationId, {
                 messageType,
                 content: trimmedContent || null,
@@ -602,34 +698,52 @@ export default function ChatWindow({
 
     return (
         <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
-
             {/* Chat header */}
-            <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-outline-variant px-4 py-3 ">
-                <button
-                    type="button"
-                    onClick={onBack}
-                    aria-label="Back to conversations"
-                    className="rounded-full p-2 text-on-surface hover:bg-surface-container md:hidden"
-                >
-                    <ArrowLeft size={20} />
-                </button>
+            {isSelectionMode ? (
+                <div className="flex items-center justify-between px-3 py-3">
+                    <div className="flex items-center gap-3">
+                        <button onClick={handleCancelSelection}>
+                            <X />
+                        </button>
 
-                <Avatar
-                    src={participant.imageUrl}
-                    alt={participant.username}
-                    size={42}
-                />
+                        <span>{selectedMessageIds.size} selected</span>
+                    </div>
 
-                <div className="min-w-0">
-                    <h2 className="truncate text-sm font-semibold text-on-surface">
-                        {participant.username}
-                    </h2>
-
-                    <p className="text-xs text-on-surface-variant">
-                        Conversation
-                    </p>
+                    <button
+                        onClick={handleDeleteClick}
+                        disabled={selectedMessageIds.size === 0}
+                    >
+                        <Trash2 className="h-6 w-6" />
+                    </button>
                 </div>
-            </header>
+            ) : (
+                <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-outline-variant px-4 py-3">
+                    <button
+                        type="button"
+                        onClick={handleBack}
+                        aria-label="Back to conversations"
+                        className="rounded-full p-2 text-on-surface hover:bg-surface-container md:hidden"
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+
+                    <Avatar
+                        src={participant.imageUrl}
+                        alt={participant.username}
+                        size={42}
+                    />
+
+                    <div className="min-w-0">
+                        <h2 className="truncate text-sm font-semibold text-on-surface">
+                            {participant.username}
+                        </h2>
+
+                        <p className="text-xs text-on-surface-variant">
+                            Conversation
+                        </p>
+                    </div>
+                </header>
+            )}
 
             {/* Messages area */}
             <div
@@ -712,7 +826,18 @@ export default function ChatWindow({
                                             senderId === currentUserId &&
                                             message.sequence <= lastReadSeq
                                         }
-                                        onReply={() => setReplyingTo(message)}
+                                        onReply={handleReply}
+                                        isSelected={selectedMessageIds.has(message._id)}
+                                        isSelectionMode={isSelectionMode}
+                                        onToggleSelection={handleToggleSelectedMessage}
+                                        onStartSelection={handleStartSelectingMessage}
+                                        isMenuOpen={openMenuMessageId === message._id}
+                                        onMenuToggle={() =>
+                                            setOpenMenuMessageId((current) =>
+                                                current === message._id ? null : message._id
+                                            )
+                                        }
+                                        onMenuClose={() => setOpenMenuMessageId(null)}
                                     />
                                 </div>
                             );
@@ -737,6 +862,58 @@ export default function ChatWindow({
                 )}
             </div>
 
+            {/* Delete confirmation dialog */}
+            {isDeleteDialogOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-sm rounded-2xl bg-surface p-5 shadow-xl">
+                        <h2 className="text-lg font-semibold text-on-surface">
+                            Delete messages?
+                        </h2>
+
+                        <p className="mt-2 text-sm text-on-surface-variant">
+                            {selectedCount} selected messages
+                        </p>
+
+                        {deleteError && (
+                            <p className="mt-3 text-sm text-error" role="alert">
+                                {deleteError}
+                            </p>
+                        )}
+
+                        <div className="mt-5 flex flex-col gap-2">
+                            <button
+                                type="button"
+                                onClick={handleDeleteForMe}
+                                disabled={isDeleting}
+                                className="rounded-xl bg-surface-container px-4 py-3 text-sm font-medium disabled:opacity-50"
+                            >
+                                {isDeleting ? "Deleting..." : "Delete for me"}
+                            </button>
+
+                            {canDeleteForEveryone && (
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteForEveryone}
+                                    disabled={isDeleting}
+                                    className="rounded-xl bg-error px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+                                >
+                                    {isDeleting ? "Deleting..." : "Delete for everyone"}
+                                </button>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={handleCloseDeleteDialog}
+                                disabled={isDeleting}
+                                className="rounded-xl px-4 py-3 text-sm text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Send error */}
             {sendError && (
                 <p
@@ -748,120 +925,121 @@ export default function ChatWindow({
             )}
 
             {/* Message composer */}
-            <form
-                onSubmit={handleSendMessage}
-                className="relative z-10 flex shrink-0 flex-col gap-2 border-t border-outline-variant bg-surface p-3 sm:p-4"
-            >
-                {replyingTo && (
-                    <div className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container p-3">
-                        <div className="min-w-0 flex-1 border-l-[3px] border-primary pl-3">
-                            <p className="text-xs font-semibold text-primary">
-                                Replying to{" "}
-                                {typeof replyingTo.senderId === "string"
-                                    ? replyingTo.senderId === currentUserId
-                                        ? "yourself"
-                                        : participant.username
-                                    : replyingTo.senderId._id.toString() === currentUserId
-                                        ? "yourself"
-                                        : participant.username}
-                            </p>
+            {!isSelectionMode && (
+                <form
+                    onSubmit={handleSendMessage}
+                    className="relative z-10 flex shrink-0 flex-col gap-2 border-t border-outline-variant bg-surface p-3 sm:p-4"
+                >
+                    {replyingTo && (
+                        <div className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container p-3">
+                            <div className="min-w-0 flex-1 border-l-[3px] border-primary pl-3">
+                                <p className="text-xs font-semibold text-primary">
+                                    Replying to{" "}
+                                    {typeof replyingTo.senderId === "string"
+                                        ? replyingTo.senderId === currentUserId
+                                            ? "yourself"
+                                            : participant.username
+                                        : replyingTo.senderId._id.toString() === currentUserId
+                                            ? "yourself"
+                                            : participant.username}
+                                </p>
 
-                            <p className="mt-1 truncate text-sm text-on-surface-variant">
-                                {replyingTo.content ||
-                                    (replyingTo.messageType === "image"
-                                        ? "Photo"
-                                        : replyingTo.messageType === "video"
-                                            ? "Video"
-                                            : replyingTo.messageType === "file"
-                                                ? replyingTo.attachments[0]?.name ?? "File"
-                                                : "Message")}
-                            </p>
+                                <p className="mt-1 truncate text-sm text-on-surface-variant">
+                                    {replyingTo.content ||
+                                        (replyingTo.messageType === "image"
+                                            ? "Photo"
+                                            : replyingTo.messageType === "video"
+                                                ? "Video"
+                                                : replyingTo.messageType === "file"
+                                                    ? replyingTo.attachments[0]?.name ?? "File"
+                                                    : "Message")}
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setReplyingTo(null)}
+                                aria-label="Cancel reply"
+                                disabled={isSending}
+                                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                            >
+                                <X size={17} />
+                            </button>
                         </div>
+                    )}
 
-                        <button
-                            type="button"
-                            onClick={() => setReplyingTo(null)}
-                            aria-label="Cancel reply"
-                            disabled={isSending}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface hover:text-on-surface disabled:opacity-50"
-                        >
-                            <X size={17} />
-                        </button>
-                    </div>
-                )}
-                {/* Selected media preview */}
-                <MediaPreview
-                    files={selectedFiles}
-                    onRemove={handleRemoveFile}
-                />
-
-                {/* Hidden file input */}
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,video/*"
-                    multiple
-                    hidden
-                    onChange={handleFileSelection}
-                    disabled={isSending}
-                />
-
-                <div className="flex items-end gap-2">
-                    {/* Select media button */}
-                    <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isSending}
-                        aria-label="Attach images or videos"
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-outline-variant text-on-surface transition hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        <ImagePlus size={20} />
-                    </button>
-
-                    <textarea
-                        value={content}
-                        onChange={(event) => setContent(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (
-                                event.key === "Enter" &&
-                                !event.shiftKey &&
-                                !event.nativeEvent.isComposing
-                            ) {
-                                event.preventDefault();
-                                event.currentTarget.form?.requestSubmit();
-                            }
-                        }}
-                        placeholder="Write a message..."
-                        rows={1}
-                        maxLength={5000}
-                        disabled={isSending}
-                        className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-outline-variant bg-surface-container px-4 py-3 text-sm text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary disabled:opacity-50"
+                    <MediaPreview
+                        files={selectedFiles}
+                        onRemove={handleRemoveFile}
                     />
 
-                    <button
-                        type="submit"
-                        disabled={
-                            (!content.trim() && selectedFiles.length === 0) ||
-                            isSending
-                        }
-                        aria-label="Send message"
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {isSending ? (
-                            <Loader2 size={19} className="animate-spin" />
-                        ) : (
-                            <Send size={19} />
-                        )}
-                    </button>
-                </div>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,video/*"
+                        multiple
+                        hidden
+                        onChange={handleFileSelection}
+                        disabled={isSending}
+                    />
 
-                {/* Upload status */}
-                {isSending && selectedFiles.length > 0 && (
-                    <p className="px-1 text-xs text-on-surface-variant">
-                        Uploading media and sending message...
-                    </p>
-                )}
-            </form>
+                    <div className="flex items-end gap-2">
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isSending}
+                            aria-label="Attach images or videos"
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-outline-variant text-on-surface transition hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <ImagePlus size={20} />
+                        </button>
+
+                        <textarea
+                            value={content}
+                            onChange={(event) => setContent(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (
+                                    event.key === "Enter" &&
+                                    !event.shiftKey &&
+                                    !event.nativeEvent.isComposing
+                                ) {
+                                    event.preventDefault();
+                                    event.currentTarget.form?.requestSubmit();
+                                }
+                            }}
+                            placeholder="Write a message..."
+                            rows={1}
+                            maxLength={5000}
+                            disabled={isSending}
+                            className="max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-outline-variant bg-surface-container px-4 py-3 text-sm text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary disabled:opacity-50"
+                        />
+
+                        <button
+                            type="submit"
+                            disabled={
+                                (!content.trim() && selectedFiles.length === 0) ||
+                                isSending
+                            }
+                            aria-label="Send message"
+                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {isSending ? (
+                                <Loader2 size={19} className="animate-spin" />
+                            ) : (
+                                <Send size={19} />
+                            )}
+                        </button>
+                    </div>
+
+                    {isSending && selectedFiles.length > 0 && (
+                        <p className="px-1 text-xs text-on-surface-variant">
+                            Uploading media and sending message...
+                        </p>
+                    )}
+                </form>
+            )}
         </div>
     );
 }
+
+export default memo(ChatWindow);

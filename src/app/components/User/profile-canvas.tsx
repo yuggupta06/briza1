@@ -655,7 +655,7 @@ function ProfileCanvasContent({
                       type="button"
                       onClick={handleMessage}
                       disabled={isStartingConversation}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-outline-variant/40 bg-surface-container-high px-4 text-sm font-medium transition hover:bg-surface-container-highest disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-outline-variant/40 bg-surface-container-high px-4 text-sm font-medium transition hover:bg-surface-container-highest disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
                     >
                       {isStartingConversation ? (
                         <LoaderCircle size={16} className="animate-spin" />

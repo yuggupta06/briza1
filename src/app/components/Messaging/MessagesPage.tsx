@@ -491,6 +491,75 @@ export default function MessagesPage() {
     },
     [mutate]
   );
+  
+// Update the inbox when messages are deleted for everyone.
+const handleMessagesDeletedInbox = useCallback(
+  async (payload: {
+    conversationId: string;
+    messageIds: string[];
+    deleteFor: "everyone";
+    deletedBy: string;
+    previewChanged: boolean;
+    lastMessage?: MessagingMessage | null;
+    lastMessageId?: string | null;
+    lastMessageAt?: string | null;
+    lastMessageSeq: number;
+    unreadCount: number;
+  }) => {
+    const {
+      conversationId,
+      previewChanged,
+      lastMessage,
+      lastMessageAt,
+      unreadCount,
+    } = payload;
+
+    // Update the directly fetched conversation, if applicable.
+    setDirectConversation((previous) => {
+      if (previous?._id !== conversationId) return previous;
+
+      return {
+        ...previous,
+        unreadCount,
+        ...(previewChanged
+          ? {
+              lastMessage: lastMessage ?? null,
+              lastMessageAt: lastMessageAt ?? null,
+            }
+          : {}),
+      };
+    });
+
+    // Update the inbox SWR cache across all loaded pages.
+    await mutate(
+      (pages) => {
+        if (!pages) return pages;
+
+        return pages.map((page) => ({
+          ...page,
+          conversations: page.conversations.map((conversation) => {
+            if (conversation._id !== conversationId) {
+              return conversation;
+            }
+
+            return {
+              ...conversation,
+              unreadCount,
+              ...(previewChanged
+                ? {
+                    lastMessage: lastMessage ?? null,
+                    lastMessageAt: lastMessageAt ?? null,
+                  }
+                : {}),
+            };
+          }),
+        }));
+      },
+      { revalidate: false }
+    );
+  },
+  [mutate]
+);
 
   // Listen for read receipts on the logged-in user's private channel.
   useEffect(() => {
@@ -515,7 +584,20 @@ export default function MessagesPage() {
       handleIncomingMessage
     );
   }, [currentUser?._id, subscribe, handleIncomingMessage]);
+  // Listen for message deletion updates on the logged-in user's private channel.
+  useEffect(() => {
+    if (!currentUser?._id) return;
 
+    return subscribe(
+      "messages-deleted-inbox",
+      handleMessagesDeletedInbox
+    );
+  }, [
+    currentUser?._id,
+    subscribe,
+    handleMessagesDeletedInbox,
+  ]);
+  
 
   // Update the URL when selecting a conversation.
   const handleSelectConversation = (
@@ -536,9 +618,9 @@ export default function MessagesPage() {
 
     router.replace("/messages", { scroll: false });
     // Refresh the inbox when returning to the conversation list.
-  if (conversations.length === 0 && !isLoading) {
-    void mutate();
-  }
+    if (conversations.length === 0 && !isLoading) {
+      void mutate();
+    }
   };
 
   if (!currentUser) {

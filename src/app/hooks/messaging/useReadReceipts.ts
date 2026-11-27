@@ -23,10 +23,23 @@ export const useReadReceipts = ({
 
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const inFlightRef = useRef(false);
-    const generationRef = useRef(0);
+    const inFlightPromiseRef = useRef<Promise<void> | null>(null);
 
-    const sendReadRequest = useCallback(async () => {
-        if (inFlightRef.current) return;
+    const sendReadRequest = useCallback(async (): Promise<void> => {
+        // If a request is already running, wait for it first.
+        if (inFlightPromiseRef.current) {
+            await inFlightPromiseRef.current;
+
+            // A newer sequence may have become visible while waiting.
+            if (
+                highestVisibleSeqRef.current >
+                lastRequestedSeqRef.current
+            ) {
+                return sendReadRequest();
+            }
+
+            return;
+        }
 
         const sequence = highestVisibleSeqRef.current;
 
@@ -34,48 +47,48 @@ export const useReadReceipts = ({
 
         inFlightRef.current = true;
 
-        const requestGeneration = generationRef.current;
         let requestSucceeded = false;
 
-        try {
-            const response = await markConversationRead(
-                conversationId,
-                sequence
-            );
+        const requestPromise = (async () => {
+            try {
+                const response = await markConversationRead(
+                    conversationId,
+                    sequence
+                );
 
-            if (requestGeneration !== generationRef.current) return;
+                const { lastReadSeq, unreadCount } = response.readState;
 
-            const { lastReadSeq, unreadCount } = response.readState;
+                lastRequestedSeqRef.current = Math.max(
+                    lastRequestedSeqRef.current,
+                    lastReadSeq
+                );
 
-            lastRequestedSeqRef.current = Math.max(
-                lastRequestedSeqRef.current,
-                lastReadSeq
-            );
+                // This callback can update the parent inbox even after
+                // ChatWindow has unmounted.
+                onReadStateChange?.(unreadCount, lastReadSeq);
 
-            onReadStateChange?.(unreadCount, lastReadSeq);
-
-            requestSucceeded = true;
-        } catch (error) {
-            console.error("Failed to update read receipt:", error);
-        } finally {
-            if (requestGeneration === generationRef.current) {
-                inFlightRef.current = false;
-
-                if (
-                    requestSucceeded &&
-                    highestVisibleSeqRef.current >
-                        lastRequestedSeqRef.current
-                ) {
-                    if (timerRef.current) {
-                        clearTimeout(timerRef.current);
-                    }
-
-                    timerRef.current = setTimeout(() => {
-                        timerRef.current = null;
-                        void sendReadRequest();
-                    }, 0);
-                }
+                requestSucceeded = true;
+            } catch (error) {
+                console.error("Failed to update read receipt:", error);
             }
+        })();
+
+        inFlightPromiseRef.current = requestPromise;
+
+        try {
+            await requestPromise;
+        } finally {
+            inFlightRef.current = false;
+            inFlightPromiseRef.current = null;
+        }
+
+        // Send any newer read progress that appeared during the request.
+        if (
+            requestSucceeded &&
+            highestVisibleSeqRef.current >
+                lastRequestedSeqRef.current
+        ) {
+            return sendReadRequest();
         }
     }, [conversationId, onReadStateChange]);
 
@@ -91,11 +104,8 @@ export const useReadReceipts = ({
     }, [sendReadRequest]);
 
     useEffect(() => {
-        generationRef.current += 1;
-
         highestVisibleSeqRef.current = initialLastReadSeq;
         lastRequestedSeqRef.current = initialLastReadSeq;
-        inFlightRef.current = false;
 
         if (timerRef.current) {
             clearTimeout(timerRef.current);
@@ -103,8 +113,8 @@ export const useReadReceipts = ({
         }
 
         return () => {
-            generationRef.current += 1;
-
+            // Clear only the pending timer.
+            // Do not invalidate or cancel an in-flight request.
             if (timerRef.current) {
                 clearTimeout(timerRef.current);
                 timerRef.current = null;
@@ -157,8 +167,18 @@ export const useReadReceipts = ({
         [sendReadRequest]
     );
 
+    const flushPendingRead = useCallback(async () => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+
+        await sendReadRequest();
+    }, [sendReadRequest]);
+
     return {
         markVisible,
         markAllRead,
+        flushPendingRead,
     };
 };

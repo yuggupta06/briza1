@@ -175,7 +175,13 @@ export const GET = withErrorHandler(
             );
         }
 
-        const baseQuery = { conversationId };
+        // Exclude messages deleted for the authenticated user.
+        const baseQuery = {
+            conversationId,
+            "deletedFor.userId": {
+                $ne: new mongoose.Types.ObjectId(userId),
+            },
+        };
 
         let messages = [];
         let nextCursor: number | null = null;

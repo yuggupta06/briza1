@@ -34,7 +34,6 @@ export const getKey = (
 ): MessagesPageKey | null => {
   if (!conversationId) return null;
 
-  // Initial page: load around the current user's read boundary.
   if (pageIndex === 0) {
     return [
       conversationId,
@@ -43,7 +42,6 @@ export const getKey = (
     ];
   }
 
-  // Subsequent pages fetch older messages.
   if (
     !previousPageData?.hasMore ||
     previousPageData.nextCursor === null
@@ -201,6 +199,7 @@ export const useConversationMessages = (
     await mutate(
       (pages) => {
         const existingPages = pages ?? [];
+
         const existingIds = new Set(
           existingPages.flatMap((page) =>
             page.messages.map((message) => message._id)
@@ -266,6 +265,30 @@ export const useConversationMessages = (
     [mutate]
   );
 
+  // Remove messages from all cached pages after successful deletion.
+  const removeMessages = useCallback(
+    async (messageIds: string[]) => {
+      if (messageIds.length === 0) return;
+
+      const deletedIds = new Set(messageIds);
+      console.log("deleted")
+      await mutate(
+        (pages) => {
+          if (!pages?.length) return pages;
+
+          return pages.map((page) => ({
+            ...page,
+            messages: page.messages.filter(
+              (message) => !deletedIds.has(message._id)
+            ),
+          }));
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate]
+  );
+
   return {
     messages,
 
@@ -280,6 +303,7 @@ export const useConversationMessages = (
     loadLatest,
 
     addMessage,
+    removeMessages,
     mutate,
   };
 };
